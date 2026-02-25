@@ -21,7 +21,7 @@ from pydantic import BaseModel, field_validator
 
 from config import settings
 from twilio_client import twilio_client
-from media_bridge import MediaBridge, active_sessions
+from media_bridge import MediaBridge, active_sessions, BACKEND_GPT_REALTIME, BACKEND_VOICE_LIVE
 
 logging.basicConfig(
     level=logging.INFO,
@@ -49,6 +49,7 @@ call_metadata: dict[str, dict] = {}
 
 class CallRequest(BaseModel):
     phone_number: str
+    backend: str = BACKEND_GPT_REALTIME
 
     @field_validator("phone_number")
     @classmethod
@@ -58,6 +59,14 @@ class CallRequest(BaseModel):
         if not re.match(r"^\+?\d{10,15}$", cleaned):
             raise ValueError("Invalid phone number format")
         return cleaned
+
+    @field_validator("backend")
+    @classmethod
+    def validate_backend(cls, v: str) -> str:
+        allowed = {BACKEND_GPT_REALTIME, BACKEND_VOICE_LIVE}
+        if v not in allowed:
+            raise ValueError(f"backend must be one of {allowed}")
+        return v
 
 
 # ─── REST Endpoints ───────────────────────────────────────────────
@@ -74,6 +83,7 @@ async def initiate_call(req: CallRequest):
     call_metadata[call_id] = {
         "call_id": call_id,
         "phone_number": req.phone_number,
+        "backend": req.backend,
         "status": "initiating",
         "twilio_sid": None,
     }
@@ -94,13 +104,14 @@ async def initiate_call(req: CallRequest):
     })
 
     # Pre-create the media bridge so it's ready when Twilio connects
-    bridge = MediaBridge(call_id)
+    bridge = MediaBridge(call_id, backend=req.backend)
     active_sessions[call_id] = bridge
 
     return {
         "call_id": call_id,
         "twilio_sid": result.get("call_sid"),
         "status": result.get("status"),
+        "backend": req.backend,
         "message": f"Call initiated to {req.phone_number}",
     }
 

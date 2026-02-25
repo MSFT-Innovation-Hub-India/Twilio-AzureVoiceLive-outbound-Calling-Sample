@@ -10,10 +10,16 @@ class Settings:
     TWILIO_AUTH_TOKEN: str = os.getenv("TWILIO_AUTH_TOKEN", "")
     TWILIO_PHONE_NUMBER: str = os.getenv("TWILIO_PHONE_NUMBER", "")
 
-    # Azure Voice Live API
+    # Azure OpenAI Realtime API (used by azure_gpt_realtime_client.py)
     AZURE_OPENAI_ENDPOINT: str = os.getenv("AZURE_OPENAI_ENDPOINT", "")
     AZURE_OPENAI_DEPLOYMENT: str = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-realtime-preview")
     AZURE_OPENAI_API_VERSION: str = os.getenv("AZURE_OPENAI_API_VERSION", "2025-04-01-preview")
+
+    # Azure Voice Live API (used by azure_voicelive_client.py)
+    AZURE_VOICE_LIVE_ENDPOINT: str = os.getenv("AZURE_VOICE_LIVE_ENDPOINT", "")
+    AZURE_VOICE_LIVE_API_VERSION: str = os.getenv("AZURE_VOICE_LIVE_API_VERSION", "2025-05-01-preview")
+    VOICE_LIVE_MODEL: str = os.getenv("VOICE_LIVE_MODEL", "gpt-4o-realtime-preview")
+    AZURE_TTS_VOICE_NAME: str = os.getenv("AZURE_TTS_VOICE_NAME", "en-US-AriaNeural")
 
     # Server
     HOST: str = os.getenv("HOST", "0.0.0.0")

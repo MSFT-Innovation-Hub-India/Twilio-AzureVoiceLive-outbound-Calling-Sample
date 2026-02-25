@@ -1,9 +1,14 @@
-# Twilio ↔ Azure Voice Live — Outbound Voice Agent
+# Twilio ↔ Azure OpenAI Realtime — Outbound Voice Agent
 
 A sample application that places **outbound PSTN calls** via **Twilio** and
-connects the callee to an AI voice agent powered by **Azure Voice Live API
-(GPT-Realtime)**. The entire conversation — user speech in, AI speech out —
+connects the callee to an AI voice agent powered by the **Azure OpenAI Realtime API
+(`gpt-4o-realtime-preview`)**. The entire conversation — user speech in, AI speech out —
 happens in real time over the phone.
+
+> **Note:** This sample also includes an alternative client (`azure_voicelive_client.py`)
+> that connects to the **Azure Voice Live API** — a separate service hosted on
+> Azure AI Services (Cognitive Services) endpoints. See
+> [Using Azure Voice Live API instead](#using-azure-voice-live-api-instead) below.
 
 ---
 
@@ -188,7 +193,8 @@ Caller's phone                                                    Azure Voice Li
 │   ├── config.py            # Settings loaded from .env
 │   ├── twilio_client.py     # Twilio REST API client (outbound calls)
 │   ├── media_bridge.py      # Bridges Twilio audio ↔ Azure Voice Live
-│   ├── azure_voice_live.py  # Azure Voice Live (GPT-Realtime) WebSocket client
+│   ├── azure_gpt_realtime_client.py  # Azure OpenAI Realtime API WebSocket client
+│   ├── azure_voicelive_client.py  # Azure Voice Live API WebSocket client
 │   ├── requirements.txt     # Python dependencies
 │   ├── .env.example         # Environment variable template
 │   └── .env                 # Your local config (git-ignored)
@@ -207,7 +213,8 @@ Caller's phone                                                    Azure Voice Li
 | **main.py** | FastAPI app with endpoints: `POST /api/call` (initiate call), `POST /twilio/twiml` (return TwiML XML), `POST /twilio/status` (status callbacks), `WS /ws/media/{id}` (Twilio audio stream), `WS /ws/events/{id}` (frontend transcript stream). |
 | **twilio_client.py** | Async HTTP client using `httpx` with Basic auth. Calls `POST /2010-04-01/Accounts/{sid}/Calls.json` to place outbound calls. |
 | **media_bridge.py** | Bidirectional audio bridge. Converts mulaw 8 kHz ↔ PCM16 24 kHz using `audioop`. Manages the lifecycle of both the Twilio and Azure WebSocket streams. |
-| **azure_voice_live.py** | Opens a WSS connection to Azure OpenAI Realtime API. Authenticates via `DefaultAzureCredential`. Configures server VAD + Whisper transcription. Streams audio in/out and emits transcript events. |
+| **azure_gpt_realtime_client.py** | Opens a WSS connection to **Azure OpenAI Realtime API** (`/openai/realtime`). Authenticates via `DefaultAzureCredential` with the `cognitiveservices.azure.com` scope. Configures server VAD + Whisper transcription. Streams audio in/out and emits transcript events. |
+| **azure_voicelive_client.py** | Connects to the **Azure Voice Live API** (`/voice-live/realtime`) on an Azure AI Services (Cognitive Services) endpoint. Uses the `ai.azure.com` scope, supports Azure Speech voices, noise suppression, and echo cancellation. Same interface as `azure_gpt_realtime_client.py`. |
 | **config.py** | Loads `.env` and exposes typed settings. Builds the Azure WSS URL from endpoint, deployment, and API version. |
 | **App.jsx** | React UI with phone number input, call/hangup controls, status badge, and a chat-style live transcript view. |
 
@@ -460,6 +467,39 @@ PUBLIC_URL=https://your-app.azurecontainerapps.io     # Stable URL, no ngrok
 - **Frontend** → Build with `npm run build` and serve as static files, or deploy to Azure Static Web Apps
 - **TLS** → Handled by the platform (App Service, Container Apps) or your reverse proxy
 - **WebSocket scaling** → Ensure your platform supports long-lived WebSocket connections (Azure Container Apps and App Service both do)
+
+---
+
+## Using Azure Voice Live API Instead
+
+The default implementation (`azure_gpt_realtime_client.py`) connects directly to the **Azure OpenAI Realtime API** at `/openai/realtime`. An alternative client (`azure_voicelive_client.py`) connects to the **Azure Voice Live API** at `/voice-live/realtime` — a separate service hosted on Azure AI Services (Cognitive Services) endpoints.
+
+Both backends are available at runtime — select which one to use via the **AI Backend** toggle in the UI before placing a call.
+
+### Key Differences
+
+| | Azure OpenAI Realtime (`azure_gpt_realtime_client.py`) | Azure Voice Live API (`azure_voicelive_client.py`) |
+|---|---|---|
+| **Endpoint** | Azure OpenAI resource | Azure AI Services (Cognitive Services) |
+| **URL path** | `/openai/realtime` | `/voice-live/realtime` |
+| **Auth scope** | `cognitiveservices.azure.com/.default` | `ai.azure.com/.default` |
+| **Voice config** | Simple name (e.g. `alloy`) | Azure Speech voices (e.g. `en-US-AriaNeural`) |
+| **Noise suppression** | — | `azure_deep_noise_suppression` |
+| **Echo cancellation** | — | `server_echo_cancellation` |
+
+### Configuration for Voice Live API
+
+To use the Voice Live API backend, add these variables to your `.env`:
+
+   ```ini
+   # Azure Voice Live API (Cognitive Services endpoint)
+   AZURE_VOICE_LIVE_ENDPOINT=https://your-resource.cognitiveservices.azure.com
+   AZURE_VOICE_LIVE_API_VERSION=2025-05-01-preview
+   VOICE_LIVE_MODEL=gpt-4o-realtime-preview
+   AZURE_TTS_VOICE_NAME=en-US-AriaNeural
+   ```
+
+Ensure your identity has the right role on the Azure AI Services resource and `az login` to the correct tenant.
 
 ---
 

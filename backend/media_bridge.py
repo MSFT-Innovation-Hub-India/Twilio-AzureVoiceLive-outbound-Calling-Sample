@@ -1,7 +1,7 @@
-"""Media bridge between Twilio audio stream and Azure Voice Live API.
+"""Media bridge between Twilio audio stream and Azure AI backend.
 
 Twilio streams telephony audio (8kHz, mulaw) to our WebSocket.
-Azure Voice Live expects 16kHz PCM16 mono.
+The AI backend (GPT-Realtime or Voice Live API) expects 24kHz PCM16 mono.
 This bridge handles format conversion and bidirectional streaming.
 """
 
@@ -14,7 +14,8 @@ import struct
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-from azure_voice_live import AzureVoiceLiveSession
+from azure_gpt_realtime_client import AzureVoiceLiveSession as GptRealtimeSession
+from azure_voicelive_client import AzureVoiceLiveSession as VoiceLiveSession
 
 logger = logging.getLogger(__name__)
 
@@ -67,13 +68,19 @@ def pcm16_to_mulaw(pcm_bytes: bytes, sample_rate_in: int = 24000, sample_rate_ou
     return mulaw_bytes
 
 
-class MediaBridge:
-    """Bridges Twilio telephony audio with Azure Voice Live API."""
+# Backend type constants
+BACKEND_GPT_REALTIME = "gpt-realtime"
+BACKEND_VOICE_LIVE = "voice-live"
 
-    def __init__(self, call_sid: str):
+
+class MediaBridge:
+    """Bridges Twilio telephony audio with an Azure AI backend."""
+
+    def __init__(self, call_sid: str, backend: str = BACKEND_GPT_REALTIME):
         self.call_sid = call_sid
+        self.backend = backend
         self.twilio_ws: WebSocket | None = None
-        self.azure_session: AzureVoiceLiveSession | None = None
+        self.azure_session = None
         self.stream_sid: str | None = None
         self._closed = False
         self.transcripts: list[dict] = []
@@ -85,12 +92,14 @@ class MediaBridge:
         """
         self.twilio_ws = websocket
 
-        # Create and connect Azure Voice Live session
-        self.azure_session = AzureVoiceLiveSession(
+        # Create the appropriate Azure session based on backend choice
+        SessionClass = VoiceLiveSession if self.backend == BACKEND_VOICE_LIVE else GptRealtimeSession
+        self.azure_session = SessionClass(
             call_sid=self.call_sid,
             on_audio_callback=self._send_audio_to_twilio,
             on_transcript_callback=self._handle_transcript,
         )
+        logger.info(f"[{self.call_sid}] Using backend: {self.backend}")
 
         try:
             await self.azure_session.connect()

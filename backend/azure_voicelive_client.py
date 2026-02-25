@@ -1,7 +1,14 @@
-"""Azure Voice Live API (GPT-Realtime) client.
+"""Azure Voice Live API client.
 
-Manages a WebSocket connection to Azure OpenAI's Realtime API endpoint
-for bidirectional speech-to-speech streaming.
+Connects to the Azure Voice Live API endpoint (/voice-live/realtime) which is
+a separate service from the Azure OpenAI Realtime API (/openai/realtime).
+
+Key differences from the Azure OpenAI Realtime approach:
+  - Endpoint: Azure AI Services (Cognitive Services), NOT Azure OpenAI
+  - URL path: /voice-live/realtime (not /openai/realtime)
+  - Auth scope: https://ai.azure.com/.default (not cognitiveservices)
+  - Voice config: Azure Speech voices with type "azure-standard"
+  - Extra capabilities: noise suppression, echo cancellation
 """
 
 import asyncio
@@ -14,14 +21,14 @@ from azure.identity.aio import DefaultAzureCredential
 
 from config import settings
 
-# Azure Cognitive Services scope for token auth
-_AZURE_COGNITIVESERVICES_SCOPE = "https://cognitiveservices.azure.com/.default"
+# Azure AI scope for Voice Live API token auth
+_AZURE_AI_SCOPE = "https://ai.azure.com/.default"
 
 logger = logging.getLogger(__name__)
 
 
 class AzureVoiceLiveSession:
-    """Manages a single session with Azure Voice Live (GPT-Realtime) API."""
+    """Manages a single session with the Azure Voice Live API."""
 
     def __init__(self, call_sid: str, on_audio_callback=None, on_transcript_callback=None):
         self.call_sid = call_sid
@@ -32,19 +39,28 @@ class AzureVoiceLiveSession:
         self._closed = False
 
     async def connect(self):
-        """Establish WebSocket connection to Azure Voice Live API using DefaultAzureCredential."""
-        url = settings.azure_realtime_url
-
-        # Acquire a token via managed identity / Azure CLI / env credentials
+        """Establish WebSocket connection to Azure Voice Live API."""
         self._credential = DefaultAzureCredential()
-        token = await self._credential.get_token(_AZURE_COGNITIVESERVICES_SCOPE)
-        headers = {"Authorization": f"Bearer {token.token}"}
+        token = await self._credential.get_token(_AZURE_AI_SCOPE)
+        access_token = token.token
 
-        logger.info(f"[{self.call_sid}] Connecting to Azure Voice Live: {url}")
+        # Build the Voice Live API WebSocket URL
+        base = settings.AZURE_VOICE_LIVE_ENDPOINT.rstrip("/")
+        ws_base = base.replace("https://", "wss://").replace("http://", "ws://")
+        url = (
+            f"{ws_base}/voice-live/realtime"
+            f"?api-version={settings.AZURE_VOICE_LIVE_API_VERSION}"
+            f"&model={settings.VOICE_LIVE_MODEL}"
+            f"&agent-access-token={access_token}"
+        )
+
+        logger.info(f"[{self.call_sid}] Connecting to Azure Voice Live API: {ws_base}/voice-live/realtime")
 
         self.ws = await websockets.connect(
             url,
-            additional_headers=headers,
+            additional_headers={
+                "Authorization": f"Bearer {access_token}",
+            },
             max_size=None,
             open_timeout=30,
         )
@@ -64,9 +80,9 @@ class AzureVoiceLiveSession:
             "session": {
                 "modalities": ["text", "audio"],
                 "instructions": settings.SYSTEM_PROMPT,
-                "voice": settings.VOICE,
                 "input_audio_format": "pcm16",
                 "output_audio_format": "pcm16",
+                "input_audio_sampling_rate": 24000,
                 "input_audio_transcription": {
                     "model": "whisper-1",
                 },
@@ -76,18 +92,25 @@ class AzureVoiceLiveSession:
                     "prefix_padding_ms": 300,
                     "silence_duration_ms": 500,
                 },
+                "input_audio_noise_reduction": {
+                    "type": "azure_deep_noise_suppression",
+                },
+                "input_audio_echo_cancellation": {
+                    "type": "server_echo_cancellation",
+                },
+                "voice": {
+                    "name": settings.AZURE_TTS_VOICE_NAME,
+                    "type": "azure-standard",
+                    "temperature": 0.8,
+                },
             },
         }
 
         await self.ws.send(json.dumps(session_config))
-        logger.info(f"[{self.call_sid}] Session configured")
+        logger.info(f"[{self.call_sid}] Voice Live session configured")
 
     async def send_audio(self, audio_bytes: bytes):
-        """Send audio data to Azure Voice Live API.
-
-        Args:
-            audio_bytes: Raw PCM16 audio data (16kHz, mono, 16-bit signed LE).
-        """
+        """Send PCM16 audio data to Azure Voice Live API."""
         if self._closed or not self.ws:
             return
 
@@ -100,7 +123,7 @@ class AzureVoiceLiveSession:
         try:
             await self.ws.send(json.dumps(msg))
         except websockets.exceptions.ConnectionClosed:
-            logger.warning(f"[{self.call_sid}] Azure WS closed while sending audio")
+            logger.warning(f"[{self.call_sid}] Voice Live WS closed while sending audio")
             self._closed = True
 
     async def _receive_loop(self):
@@ -114,14 +137,12 @@ class AzureVoiceLiveSession:
                 msg_type = data.get("type", "")
 
                 if msg_type == "response.audio.delta":
-                    # AI-generated audio chunk
                     audio_b64 = data.get("delta", "")
                     if audio_b64 and self._on_audio:
                         audio_bytes = base64.b64decode(audio_b64)
                         await self._on_audio(audio_bytes)
 
                 elif msg_type == "response.audio_transcript.delta":
-                    # Partial transcript of AI speech
                     text = data.get("delta", "")
                     if text and self._on_transcript:
                         await self._on_transcript("assistant", text, partial=True)
@@ -137,14 +158,14 @@ class AzureVoiceLiveSession:
                         await self._on_transcript("user", text, partial=False)
 
                 elif msg_type == "session.created":
-                    logger.info(f"[{self.call_sid}] Azure session created")
+                    logger.info(f"[{self.call_sid}] Voice Live session created")
 
                 elif msg_type == "session.updated":
-                    logger.info(f"[{self.call_sid}] Azure session updated")
+                    logger.info(f"[{self.call_sid}] Voice Live session updated")
 
                 elif msg_type == "error":
                     error = data.get("error", {})
-                    logger.error(f"[{self.call_sid}] Azure error: {error}")
+                    logger.error(f"[{self.call_sid}] Voice Live error: {error}")
 
                 elif msg_type == "input_audio_buffer.speech_started":
                     logger.debug(f"[{self.call_sid}] User started speaking")
@@ -152,10 +173,13 @@ class AzureVoiceLiveSession:
                 elif msg_type == "input_audio_buffer.speech_stopped":
                     logger.debug(f"[{self.call_sid}] User stopped speaking")
 
+                elif msg_type == "input_audio_buffer.committed":
+                    logger.debug(f"[{self.call_sid}] Audio buffer committed")
+
         except websockets.exceptions.ConnectionClosed as e:
-            logger.info(f"[{self.call_sid}] Azure WS closed: {e}")
+            logger.info(f"[{self.call_sid}] Voice Live WS closed: {e}")
         except Exception:
-            logger.exception(f"[{self.call_sid}] Error in Azure receive loop")
+            logger.exception(f"[{self.call_sid}] Error in Voice Live receive loop")
         finally:
             self._closed = True
 
@@ -172,4 +196,4 @@ class AzureVoiceLiveSession:
             await self.ws.close()
         if hasattr(self, "_credential"):
             await self._credential.close()
-        logger.info(f"[{self.call_sid}] Azure session closed")
+        logger.info(f"[{self.call_sid}] Voice Live session closed")

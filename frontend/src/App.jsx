@@ -55,6 +55,7 @@ function TranscriptMessage({ role, text }) {
 
 export default function App() {
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [backend, setBackend] = useState('gpt-realtime');
   const [callState, setCallState] = useState('idle'); // idle | calling | connected | completed | failed
   const [callId, setCallId] = useState(null);
   const [transcripts, setTranscripts] = useState([]);
@@ -104,7 +105,7 @@ export default function App() {
       const res = await fetch(`${API_BASE}/call`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone_number: phoneNumber }),
+        body: JSON.stringify({ phone_number: phoneNumber, backend }),
       });
 
       if (!res.ok) {
@@ -138,6 +139,7 @@ export default function App() {
     setTranscripts([]);
     setError(null);
     setPhoneNumber('');
+    setBackend('gpt-realtime');
   };
 
   const isCallActive = ['calling', 'queued', 'ringing', 'in-progress', 'connected'].includes(callState);
@@ -153,7 +155,7 @@ export default function App() {
           🤖 Voice Agent
         </h1>
         <p style={{ color: 'var(--text-dim)', fontSize: 14 }}>
-          Twilio PSTN + Azure Voice Live (GPT-Realtime)
+          Twilio PSTN + Azure AI (GPT-Realtime / Voice Live)
         </p>
       </div>
 
@@ -183,6 +185,36 @@ export default function App() {
               opacity: isCallActive ? 0.5 : 1,
             }}
           />
+        </div>
+
+        {/* Backend selector */}
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 6 }}>
+            AI Backend
+          </label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {[
+              { value: 'gpt-realtime', label: 'Azure OpenAI Realtime' },
+              { value: 'voice-live', label: 'Azure Voice Live API' },
+            ].map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setBackend(opt.value)}
+                disabled={isCallActive}
+                style={{
+                  flex: 1, padding: '10px 12px', borderRadius: 8,
+                  border: backend === opt.value ? '2px solid var(--accent)' : '1px solid var(--border)',
+                  background: backend === opt.value ? 'var(--accent)22' : 'var(--bg)',
+                  color: backend === opt.value ? 'var(--accent)' : 'var(--text-dim)',
+                  fontSize: 13, fontWeight: backend === opt.value ? 600 : 400,
+                  cursor: isCallActive ? 'default' : 'pointer',
+                  opacity: isCallActive ? 0.5 : 1,
+                }}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Buttons */}
@@ -279,9 +311,9 @@ export default function App() {
       }}>
         <strong style={{ color: 'var(--text)' }}>Architecture:</strong>
         <br />
-        React UI → FastAPI → Twilio (PSTN) → Media Bridge → Azure Voice Live (GPT-Realtime)
+        React UI → FastAPI → Twilio (PSTN) → Media Bridge → {backend === 'voice-live' ? 'Azure Voice Live API' : 'Azure OpenAI Realtime'}
         <br />
-        Audio: Twilio (mulaw 8kHz) ↔ Bridge (PCM16 24kHz) ↔ Azure Voice Live API
+        Audio: Twilio (mulaw 8kHz) ↔ Bridge (PCM16 24kHz) ↔ {backend === 'voice-live' ? 'Voice Live API' : 'GPT-Realtime API'}
       </div>
 
       <style>{`
