@@ -218,6 +218,14 @@ Caller's phone                                                    Azure Voice Li
 | **config.py** | Loads `.env` and exposes typed settings. Builds the Azure WSS URL from endpoint, deployment, and API version. |
 | **App.jsx** | React UI with phone number input, call/hangup controls, status badge, and a chat-style live transcript view. |
 
+### Additional Documentation
+
+| Document | Description |
+|----------|-------------|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Solution architecture diagram — color-coded component boxes, 30 numbered flow steps, and a full legend explaining every connection. |
+| [AUDIO_PIPELINE.md](AUDIO_PIPELINE.md) | Deep dive into mulaw vs PCM16 encoding, sample rate resampling, byte-level walkthrough, and why the conversion pipeline is necessary. |
+| [PRODUCTION.md](PRODUCTION.md) | Production architecture guide — scaling bottlenecks, credential caching, multi-worker deployment, observability, and Azure Container Apps configuration. |
+
 ---
 
 ## Prerequisites
