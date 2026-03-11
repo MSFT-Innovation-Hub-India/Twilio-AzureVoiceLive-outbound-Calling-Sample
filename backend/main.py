@@ -29,6 +29,8 @@ from config import settings
 from twilio_client import twilio_client
 from media_bridge import MediaBridge, active_sessions, BACKEND_GPT_REALTIME, BACKEND_VOICE_LIVE
 from scenario_manager import list_scenarios, load_scenario
+import cosmosdb_client
+import cosmosdb_network
 
 logging.basicConfig(
     level=logging.INFO,
@@ -144,7 +146,7 @@ async def initiate_call(req: CallRequest):
     })
 
     # Pre-create the media bridge so it's ready when Twilio connects
-    bridge = MediaBridge(call_id, backend=req.backend, scenario=scenario)
+    bridge = MediaBridge(call_id, backend=req.backend, scenario=scenario, candidate_name=req.candidate_name)
     active_sessions[call_id] = bridge
 
     return {
@@ -175,12 +177,32 @@ async def list_calls():
 
 
 @app.get("/api/results")
-async def list_results():
+async def get_results():
     """List all saved interview results."""
+    try:
+        items = await cosmosdb_client.list_results()
+        results = [
+            {
+                "call_id": item.get("call_id", item.get("id")),
+                "candidate_name": item.get("candidate_name", "Unknown"),
+                "call_outcome": item.get("call_outcome", "unknown"),
+                "overall_recommendation": item.get("overall_recommendation", "unknown"),
+                "scenario_id": item.get("scenario_id"),
+                "timestamp": item.get("timestamp"),
+            }
+            for item in items
+        ]
+        return {"results": results}
+    except Exception:
+        logger.exception("Failed to list results from Cosmos DB, falling back to local")
+        return await _list_results_local()
+
+
+async def _list_results_local():
+    """Fallback: list results from local disk."""
     results_dir = Path(__file__).parent / "results"
     if not results_dir.exists():
         return {"results": []}
-
     results = []
     for path in sorted(results_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
         try:
@@ -201,6 +223,14 @@ async def list_results():
 @app.get("/api/results/{call_id}")
 async def get_result(call_id: str):
     """Get full interview result by call_id."""
+    try:
+        item = await cosmosdb_client.get_result(call_id)
+        if item:
+            return item
+    except Exception:
+        logger.exception(f"Failed to get result from Cosmos DB for {call_id}")
+
+    # Fallback to local file
     result_file = Path(__file__).parent / "results" / f"{call_id}.json"
     if not result_file.exists():
         raise HTTPException(status_code=404, detail=f"Result for call '{call_id}' not found")
@@ -331,6 +361,30 @@ async def _broadcast_event(call_id: str, event: dict):
             pass
 
 
+# ─── Cosmos DB Network Access ─────────────────────────────────────
+
+@app.get("/api/cosmosdb/network-status")
+async def cosmosdb_network_status():
+    """Check whether Cosmos DB public network access is enabled."""
+    try:
+        status = await asyncio.to_thread(cosmosdb_network.check_public_network_access)
+        return status
+    except Exception as exc:
+        logger.exception("Failed to check Cosmos DB network status")
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.post("/api/cosmosdb/enable-network")
+async def cosmosdb_enable_network():
+    """Enable public network access on the Cosmos DB account (may take ~1 min)."""
+    try:
+        result = await asyncio.to_thread(cosmosdb_network.enable_public_network_access)
+        return result
+    except Exception as exc:
+        logger.exception("Failed to enable Cosmos DB public network access")
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
 # ─── Health Check ─────────────────────────────────────────────────
 
 @app.get("/health")
@@ -339,6 +393,11 @@ async def health():
         "status": "healthy",
         "active_calls": len(active_sessions),
     }
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    await cosmosdb_client.close()
 
 
 # ─── Runner ──────────────────────────────────────────────────────

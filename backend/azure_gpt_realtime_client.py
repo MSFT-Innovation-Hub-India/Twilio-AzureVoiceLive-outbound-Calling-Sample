@@ -26,15 +26,21 @@ logger = logging.getLogger(__name__)
 class AzureVoiceLiveSession:
     """Manages a single session with Azure Voice Live (GPT-Realtime) API."""
 
-    def __init__(self, call_sid: str, on_audio_callback=None, on_transcript_callback=None, scenario: dict | None = None, on_function_call=None):
+    def __init__(self, call_sid: str, on_audio_callback=None, on_transcript_callback=None, scenario: dict | None = None, on_function_call=None, candidate_name: str | None = None):
         self.call_sid = call_sid
         self.ws = None
         self._on_audio = on_audio_callback
         self._on_transcript = on_transcript_callback
         self._on_function_call = on_function_call
         self._scenario = scenario
+        self._candidate_name = candidate_name
         self._receive_task: asyncio.Task | None = None
         self._closed = False
+        # Interruption handling
+        self._speech_active = False
+        self._response_in_progress = False
+        self._pending_interrupt_task: asyncio.Task | None = None
+        self._interrupt_debounce_ms = 450
 
     async def connect(self):
         """Establish WebSocket connection to Azure Voice Live API using DefaultAzureCredential."""
@@ -68,6 +74,10 @@ class AzureVoiceLiveSession:
         instructions = settings.SYSTEM_PROMPT
         if self._scenario:
             instructions = self._scenario.get("system_prompt", instructions)
+
+        # Inject candidate name into instructions so the agent knows who it's speaking to
+        if self._candidate_name:
+            instructions += f"\n\nThe candidate you are speaking with is named {self._candidate_name}. Use their name when greeting them."
 
         # Voice — scenario can override
         voice = settings.VOICE
@@ -107,6 +117,10 @@ class AzureVoiceLiveSession:
         await self.ws.send(json.dumps(session_config))
         logger.info(f"[{self.call_sid}] Session configured (scenario: {self._scenario.get('id', 'none') if self._scenario else 'default'})")
 
+        # Trigger the agent to speak first
+        await self.ws.send(json.dumps({"type": "response.create"}))
+        logger.info(f"[{self.call_sid}] Triggered initial agent greeting")
+
     async def send_audio(self, audio_bytes: bytes):
         """Send audio data to Azure Voice Live API.
 
@@ -140,6 +154,7 @@ class AzureVoiceLiveSession:
 
                 if msg_type == "response.audio.delta":
                     # AI-generated audio chunk
+                    self._response_in_progress = True
                     audio_b64 = data.get("delta", "")
                     if audio_b64 and self._on_audio:
                         audio_bytes = base64.b64decode(audio_b64)
@@ -173,11 +188,19 @@ class AzureVoiceLiveSession:
 
                 elif msg_type == "input_audio_buffer.speech_started":
                     logger.debug(f"[{self.call_sid}] User started speaking")
+                    self._speech_active = True
+                    self._cancel_pending_interrupt()
+                    self._pending_interrupt_task = asyncio.create_task(
+                        self._debounced_interrupt()
+                    )
 
                 elif msg_type == "input_audio_buffer.speech_stopped":
                     logger.debug(f"[{self.call_sid}] User stopped speaking")
+                    self._speech_active = False
+                    self._cancel_pending_interrupt()
 
                 elif msg_type == "response.done":
+                    self._response_in_progress = False
                     await self._handle_response_done(data)
 
         except websockets.exceptions.ConnectionClosed as e:
@@ -226,6 +249,35 @@ class AzureVoiceLiveSession:
                     }))
         except Exception:
             logger.exception(f"[{self.call_sid}] Error handling function call")
+
+    def _cancel_pending_interrupt(self):
+        """Cancel any pending debounced interrupt task."""
+        if self._pending_interrupt_task:
+            self._pending_interrupt_task.cancel()
+            self._pending_interrupt_task = None
+
+    async def _debounced_interrupt(self):
+        """Wait briefly before triggering an interrupt to filter out coughs/noise."""
+        try:
+            await asyncio.sleep(self._interrupt_debounce_ms / 1000)
+            if self._speech_active and self._response_in_progress:
+                await self._interrupt_response()
+        except asyncio.CancelledError:
+            pass
+        finally:
+            self._pending_interrupt_task = None
+
+    async def _interrupt_response(self):
+        """Cancel the current AI response so the user can barge in."""
+        if self._closed or not self.ws:
+            return
+        try:
+            await self.ws.send(json.dumps({"type": "response.cancel"}))
+            await self.ws.send(json.dumps({"type": "input_audio_buffer.clear"}))
+            self._response_in_progress = False
+            logger.info(f"[{self.call_sid}] Interrupted — cancelled response for barge-in")
+        except Exception:
+            logger.exception(f"[{self.call_sid}] Error during interrupt")
 
     async def close(self):
         """Close the Azure Voice Live session."""

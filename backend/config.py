@@ -26,6 +26,16 @@ class Settings:
     PORT: int = int(os.getenv("PORT", "8000"))
     PUBLIC_URL: str = os.getenv("PUBLIC_URL", "http://localhost:8000")
 
+    # Azure Cosmos DB
+    AZURE_COSMOS_DB_ENDPOINT: str = os.getenv("AZURE_COSMOS_DB_ENDPOINT", "")
+    AZURE_COSMOS_DB_DATABASE: str = os.getenv("AZURE_COSMOS_DB_DATABASE", "")
+    AZURE_COSMOS_DB_CONTAINER: str = os.getenv("AZURE_COSMOS_DB_CONTAINER", "")
+
+    # Azure Cosmos DB Management (for network access control)
+    AZURE_SUBSCRIPTION_ID: str = os.getenv("AZURE_SUBSCRIPTION_ID", "")
+    AZURE_RESOURCE_GROUP: str = os.getenv("AZURE_RESOURCE_GROUP", "")
+    AZURE_COSMOS_DB_ACCOUNT_NAME: str = os.getenv("AZURE_COSMOS_DB_ACCOUNT_NAME", "")
+
     # Agent
     SYSTEM_PROMPT: str = os.getenv(
         "SYSTEM_PROMPT",

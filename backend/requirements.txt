@@ -7,4 +7,6 @@ pydantic==2.10.4
 audioop-lts==0.2.1
 numpy==2.2.1
 azure-identity==1.19.0
+azure-cosmos==4.9.0
+azure-mgmt-cosmosdb==9.6.0
 aiohttp==3.13.3

@@ -19,6 +19,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from azure_gpt_realtime_client import AzureVoiceLiveSession as GptRealtimeSession
 from azure_voicelive_client import AzureVoiceLiveSession as VoiceLiveSession
+import cosmosdb_client
 
 logger = logging.getLogger(__name__)
 
@@ -84,10 +85,11 @@ RESULTS_DIR.mkdir(exist_ok=True)
 class MediaBridge:
     """Bridges Twilio telephony audio with an Azure AI backend."""
 
-    def __init__(self, call_sid: str, backend: str = BACKEND_GPT_REALTIME, scenario: dict | None = None):
+    def __init__(self, call_sid: str, backend: str = BACKEND_GPT_REALTIME, scenario: dict | None = None, candidate_name: str | None = None):
         self.call_sid = call_sid
         self.backend = backend
         self.scenario = scenario
+        self.candidate_name = candidate_name
         self.twilio_ws: WebSocket | None = None
         self.azure_session = None
         self.stream_sid: str | None = None
@@ -110,6 +112,7 @@ class MediaBridge:
             on_transcript_callback=self._handle_transcript,
             scenario=self.scenario,
             on_function_call=self._handle_function_call,
+            candidate_name=self.candidate_name,
         )
         logger.info(f"[{self.call_sid}] Using backend: {self.backend}, scenario: {self.scenario.get('id') if self.scenario else 'default'}")
 
@@ -215,8 +218,10 @@ class MediaBridge:
         logger.info(f"[{self.call_sid}] Function call received: {fn_name}")
 
         if fn_name == "save_interview_results":
-            # Attach metadata
+            # Attach metadata — 'id' is mandatory for Cosmos DB
+            arguments["id"] = str(uuid.uuid4())
             arguments["call_id"] = self.call_sid
+            arguments["candidate_name"] = self.candidate_name or ""
             arguments["scenario_id"] = self.scenario.get("id") if self.scenario else None
             arguments["timestamp"] = datetime.now(timezone.utc).isoformat()
             arguments["transcripts"] = self.transcripts.copy()
@@ -227,6 +232,12 @@ class MediaBridge:
             result_file = RESULTS_DIR / f"{self.call_sid}.json"
             result_file.write_text(json.dumps(arguments, indent=2, ensure_ascii=False), encoding="utf-8")
             logger.info(f"[{self.call_sid}] Interview results saved to {result_file}")
+
+            # Persist to Cosmos DB
+            try:
+                await cosmosdb_client.save_result(arguments)
+            except Exception:
+                logger.exception(f"[{self.call_sid}] Failed to persist results to Cosmos DB")
 
             return {"status": "saved", "call_id": self.call_sid}
 
