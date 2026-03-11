@@ -11,6 +11,9 @@ import base64
 import json
 import logging
 import struct
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -73,17 +76,24 @@ BACKEND_GPT_REALTIME = "gpt-realtime"
 BACKEND_VOICE_LIVE = "voice-live"
 
 
+# Directory for saving interview results
+RESULTS_DIR = Path(__file__).parent / "results"
+RESULTS_DIR.mkdir(exist_ok=True)
+
+
 class MediaBridge:
     """Bridges Twilio telephony audio with an Azure AI backend."""
 
-    def __init__(self, call_sid: str, backend: str = BACKEND_GPT_REALTIME):
+    def __init__(self, call_sid: str, backend: str = BACKEND_GPT_REALTIME, scenario: dict | None = None):
         self.call_sid = call_sid
         self.backend = backend
+        self.scenario = scenario
         self.twilio_ws: WebSocket | None = None
         self.azure_session = None
         self.stream_sid: str | None = None
         self._closed = False
         self.transcripts: list[dict] = []
+        self.interview_results: dict | None = None
 
     async def handle_twilio_stream(self, websocket: WebSocket):
         """Handle incoming WebSocket connection from Twilio media stream.
@@ -98,8 +108,10 @@ class MediaBridge:
             call_sid=self.call_sid,
             on_audio_callback=self._send_audio_to_twilio,
             on_transcript_callback=self._handle_transcript,
+            scenario=self.scenario,
+            on_function_call=self._handle_function_call,
         )
-        logger.info(f"[{self.call_sid}] Using backend: {self.backend}")
+        logger.info(f"[{self.call_sid}] Using backend: {self.backend}, scenario: {self.scenario.get('id') if self.scenario else 'default'}")
 
         try:
             await self.azure_session.connect()
@@ -197,6 +209,29 @@ class MediaBridge:
         if not partial:
             self.transcripts.append({"role": role, "text": text})
             logger.info(f"[{self.call_sid}] [{role}]: {text}")
+
+    async def _handle_function_call(self, fn_name: str, arguments: dict) -> dict:
+        """Handle function calls from the AI model (e.g., saving interview results)."""
+        logger.info(f"[{self.call_sid}] Function call received: {fn_name}")
+
+        if fn_name == "save_interview_results":
+            # Attach metadata
+            arguments["call_id"] = self.call_sid
+            arguments["scenario_id"] = self.scenario.get("id") if self.scenario else None
+            arguments["timestamp"] = datetime.now(timezone.utc).isoformat()
+            arguments["transcripts"] = self.transcripts.copy()
+
+            self.interview_results = arguments
+
+            # Persist to disk
+            result_file = RESULTS_DIR / f"{self.call_sid}.json"
+            result_file.write_text(json.dumps(arguments, indent=2, ensure_ascii=False), encoding="utf-8")
+            logger.info(f"[{self.call_sid}] Interview results saved to {result_file}")
+
+            return {"status": "saved", "call_id": self.call_sid}
+
+        logger.warning(f"[{self.call_sid}] Unknown function: {fn_name}")
+        return {"error": f"Unknown function: {fn_name}"}
 
     async def close(self):
         """Clean up the media bridge."""

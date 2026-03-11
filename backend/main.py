@@ -1,8 +1,12 @@
 """FastAPI server — Twilio ↔ Azure Voice Live media bridge.
 
 Endpoints:
+    GET  /api/scenarios     – List available interview scenarios
+    GET  /api/scenarios/{id} – Get full scenario details
     POST /api/call          – Trigger outbound call via Twilio
     GET  /api/calls         – List active calls
+    GET  /api/results       – List completed interview results
+    GET  /api/results/{id}  – Get interview result by call_id
     POST /twilio/status     – Twilio status callback
     POST /twilio/twiml      – TwiML response for call flow
     WS   /ws/media/{sid}    – WebSocket for Twilio media stream
@@ -13,15 +17,18 @@ import asyncio
 import json
 import logging
 import uuid
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, field_validator
+from typing import Optional
 
 from config import settings
 from twilio_client import twilio_client
 from media_bridge import MediaBridge, active_sessions, BACKEND_GPT_REALTIME, BACKEND_VOICE_LIVE
+from scenario_manager import list_scenarios, load_scenario
 
 logging.basicConfig(
     level=logging.INFO,
@@ -50,6 +57,8 @@ call_metadata: dict[str, dict] = {}
 class CallRequest(BaseModel):
     phone_number: str
     backend: str = BACKEND_GPT_REALTIME
+    scenario_id: Optional[str] = None
+    candidate_name: Optional[str] = None
 
     @field_validator("phone_number")
     @classmethod
@@ -71,10 +80,39 @@ class CallRequest(BaseModel):
 
 # ─── REST Endpoints ───────────────────────────────────────────────
 
+@app.get("/api/scenarios")
+async def get_scenarios():
+    """List all available interview/call scenarios."""
+    return {"scenarios": list_scenarios()}
+
+
+@app.get("/api/scenarios/{scenario_id}")
+async def get_scenario(scenario_id: str):
+    """Get full details of a specific scenario."""
+    scenario = load_scenario(scenario_id)
+    if not scenario:
+        raise HTTPException(status_code=404, detail=f"Scenario '{scenario_id}' not found")
+    # Return summary (don't expose full system_prompt to frontend)
+    return {
+        "id": scenario["id"],
+        "name": scenario["name"],
+        "description": scenario.get("description", ""),
+        "version": scenario.get("version", "1.0"),
+        "has_tools": bool(scenario.get("tools")),
+    }
+
+
 @app.post("/api/call")
 async def initiate_call(req: CallRequest):
     """Place an outbound call via Twilio and prepare the media bridge."""
     call_id = str(uuid.uuid4())[:8]
+
+    # Load scenario if specified
+    scenario = None
+    if req.scenario_id:
+        scenario = load_scenario(req.scenario_id)
+        if not scenario:
+            raise HTTPException(status_code=404, detail=f"Scenario '{req.scenario_id}' not found")
 
     twiml_url = f"{settings.PUBLIC_URL}/twilio/twiml?call_id={call_id}"
     status_callback = f"{settings.PUBLIC_URL}/twilio/status"
@@ -83,7 +121,9 @@ async def initiate_call(req: CallRequest):
     call_metadata[call_id] = {
         "call_id": call_id,
         "phone_number": req.phone_number,
+        "candidate_name": req.candidate_name,
         "backend": req.backend,
+        "scenario_id": req.scenario_id,
         "status": "initiating",
         "twilio_sid": None,
     }
@@ -104,7 +144,7 @@ async def initiate_call(req: CallRequest):
     })
 
     # Pre-create the media bridge so it's ready when Twilio connects
-    bridge = MediaBridge(call_id, backend=req.backend)
+    bridge = MediaBridge(call_id, backend=req.backend, scenario=scenario)
     active_sessions[call_id] = bridge
 
     return {
@@ -112,6 +152,7 @@ async def initiate_call(req: CallRequest):
         "twilio_sid": result.get("call_sid"),
         "status": result.get("status"),
         "backend": req.backend,
+        "scenario_id": req.scenario_id,
         "message": f"Call initiated to {req.phone_number}",
     }
 
@@ -125,10 +166,45 @@ async def list_calls():
                 "call_id": cid,
                 "status": meta.get("status"),
                 "phone_number": meta.get("phone_number"),
+                "candidate_name": meta.get("candidate_name"),
+                "scenario_id": meta.get("scenario_id"),
             }
             for cid, meta in call_metadata.items()
         ]
     }
+
+
+@app.get("/api/results")
+async def list_results():
+    """List all saved interview results."""
+    results_dir = Path(__file__).parent / "results"
+    if not results_dir.exists():
+        return {"results": []}
+
+    results = []
+    for path in sorted(results_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            results.append({
+                "call_id": data.get("call_id", path.stem),
+                "candidate_name": data.get("candidate_name", "Unknown"),
+                "call_outcome": data.get("call_outcome", "unknown"),
+                "overall_recommendation": data.get("overall_recommendation", "unknown"),
+                "scenario_id": data.get("scenario_id"),
+                "timestamp": data.get("timestamp"),
+            })
+        except (json.JSONDecodeError, KeyError):
+            continue
+    return {"results": results}
+
+
+@app.get("/api/results/{call_id}")
+async def get_result(call_id: str):
+    """Get full interview result by call_id."""
+    result_file = Path(__file__).parent / "results" / f"{call_id}.json"
+    if not result_file.exists():
+        raise HTTPException(status_code=404, detail=f"Result for call '{call_id}' not found")
+    return json.loads(result_file.read_text(encoding="utf-8"))
 
 
 # ─── Twilio Callbacks ────────────────────────────────────────────

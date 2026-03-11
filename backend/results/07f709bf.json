@@ -1,0 +1,312 @@
+{
+  "candidate_name": "Unknown",
+  "call_outcome": "completed",
+  "role_confirmed": true,
+  "eligibility": {
+    "transport": "four_wheeler",
+    "smartphone": "iphone",
+    "education_12th_pass": "yes",
+    "target_comfort": "yes",
+    "travel_comfort": "yes"
+  },
+  "assessment": {
+    "sales_pitch_score": "adequate",
+    "sales_pitch_notes": "Candidate highlighted affordability and practicality of Android, and mentioned resilience to damage. Rebuttals were addressed pragmatically but lacked detailed comparisons.",
+    "rebuttal_handling": "Addressed camera by downplaying need, addressed battery by saying multiple Android phones could be used, and security by being willing to replace phone if hacked.",
+    "daily_target_ideas": "Focus on understanding the product well and using storytelling to highlight its value.",
+    "willingness_to_stretch": "Mentioned going to a bar after completing targets early.",
+    "stickiness_to_phonepe": "Uncertain about long-term plans, not sure of next one year.",
+    "financial_dependence": "Income would be important to feed the household."
+  },
+  "overall_recommendation": "borderline",
+  "recommendation_justification": "Candidate meets key eligibility criteria and showed basic sales abilities, but uncertainty about long-term goals and willingness to stretch is questionable. Income motivation is strong.",
+  "call_id": "07f709bf",
+  "scenario_id": "phonepe_field_sales_screening",
+  "timestamp": "2026-03-11T06:02:34.765012+00:00",
+  "transcripts": [
+    {
+      "role": "user",
+      "text": "Thank you. "
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, thank"
+    },
+    {
+      "role": "user",
+      "text": "Hello there"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, thank you for applying to PhonePe."
+    },
+    {
+      "role": "user",
+      "text": "Yeah, thanks so much."
+    },
+    {
+      "role": "assistant",
+      "text": "My name is Aria, and I am the Recruitment Assistant for the talent acquisition team here at PhonePe."
+    },
+    {
+      "role": "user",
+      "text": "Okay."
+    },
+    {
+      "role": "assistant",
+      "text": "This short call will cover some essential questions for the field sales position to see if your experience is a good match before we proceed to an in-person interview."
+    },
+    {
+      "role": "user",
+      "text": "Water"
+    },
+    {
+      "role": "assistant",
+      "text": "Do you have about 5 to 7 minutes available right now to proceed with these questions?"
+    },
+    {
+      "role": "user",
+      "text": "Yes, I have the seat"
+    },
+    {
+      "role": "assistant",
+      "text": "Great. We will begin with the first"
+    },
+    {
+      "role": "user",
+      "text": "Love you."
+    },
+    {
+      "role": "assistant",
+      "text": "Can you confirm you are aware of and interested in the field sales role at PhonePe?"
+    },
+    {
+      "role": "user",
+      "text": "Yet I am"
+    },
+    {
+      "role": "assistant",
+      "text": "Excellent. Please note that all answers are recorded and transcribed to ensure a fair evaluation. We will begin with the first question now."
+    },
+    {
+      "role": "user",
+      "text": "Okay."
+    },
+    {
+      "role": "assistant",
+      "text": "The role requires market movement. Do you have access to a two-wheeler or a four-wheeler for daily work?"
+    },
+    {
+      "role": "user",
+      "text": "Yeah, I have a 4-wheeler for daily work. Sorry, I have an 8-wheeler."
+    },
+    {
+      "role": "assistant",
+      "text": "Got it. I’ve noted that you have a four-wheeler for daily work."
+    },
+    {
+      "role": "user",
+      "text": "They also have an e-dealer."
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks for sharing that. I’ll keep your four-wheeler noted for now. Next question: Do you own an Android smartphone or"
+    },
+    {
+      "role": "user",
+      "text": "Yeah, we'll be sure to cut it."
+    },
+    {
+      "role": "assistant",
+      "text": "Do you own an Android smartphone or any other smartphone?"
+    },
+    {
+      "role": "user",
+      "text": "And I'm going to put that now."
+    },
+    {
+      "role": "user",
+      "text": "I have an iPhone."
+    },
+    {
+      "role": "assistant",
+      "text": "Thank you. I've noted that you have an iPhone."
+    },
+    {
+      "role": "user",
+      "text": "We'll see."
+    },
+    {
+      "role": "assistant",
+      "text": "For compliance purposes, we must confirm your education. Do you have a valid 12th pass certificate?"
+    },
+    {
+      "role": "user",
+      "text": "Yes, I've got a back list in engineering as well."
+    },
+    {
+      "role": "assistant",
+      "text": "Understood. I’ve recorded that you have a valid 12th pass certificate."
+    },
+    {
+      "role": "user",
+      "text": "Profi."
+    },
+    {
+      "role": "assistant",
+      "text": "The role is primarily target-based sales, requiring you to meet monthly goals. Are you comfortable with a target-based sales job?"
+    },
+    {
+      "role": "user",
+      "text": "Yes, I am. I thrive on that."
+    },
+    {
+      "role": "assistant",
+      "text": "Great, I've noted that you're comfortable with a target-based sales job."
+    },
+    {
+      "role": "user",
+      "text": "Yeah, proceed. They have to keep prompting you every time."
+    },
+    {
+      "role": "assistant",
+      "text": "Thank you for your enthusiasm. The job requires some amount of intra-city travel to meet merchants. Are you comfortable with this daily intra-city travel requirement?"
+    },
+    {
+      "role": "user",
+      "text": "Yeah, yeah, I love prevalent"
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks for confirming that. You're comfortable with daily intra-city travel."
+    },
+    {
+      "role": "user",
+      "text": "Why put the thumbnail?"
+    },
+    {
+      "role": "assistant",
+      "text": "Now I'd like to do a quick exercise. Imagine I am an iPhone"
+    },
+    {
+      "role": "user",
+      "text": "Okay."
+    },
+    {
+      "role": "assistant",
+      "text": "Imagine I am an iPhone user. I'd like you to pitch me on purchasing an Android smartphone or any other smartphone you'd recommend. Go ahead."
+    },
+    {
+      "role": "user",
+      "text": "Bye."
+    },
+    {
+      "role": "assistant",
+      "text": "It's your turn to give it a try. Please go ahead and pitch me on why I should consider an Android or another smartphone."
+    },
+    {
+      "role": "user",
+      "text": "Okay, so you have an iPhone, that's great. Just try dropping that phone or the battery runs out or the battery gets screwed up and all that, so you'll be a little bit spent. So it's better off buying a new iPhone. So rather than doing that with an Android smartphone, I don't have these kind of issues. While it's a passive phone, but I would still prefer for everyday use and for the travel that I do and for the conditions that I need to work in. So I think a cheaper Android phone which is one-tenth of what an iPhone is, is still okay with me."
+    },
+    {
+      "role": "assistant",
+      "text": "Thank you for that pitch. Here's a follow-up: But iPhone has better camera quality. How would you respond to that?"
+    },
+    {
+      "role": "user",
+      "text": "We'll continue."
+    },
+    {
+      "role": "assistant",
+      "text": "Take your time. How would you address the point about iPhone having better camera quality?"
+    },
+    {
+      "role": "user",
+      "text": "Okay, so I'm not an avid picture taker. My work involves more of speaking to people and I think I can do that better in person. So I think the phone is actually capturing some important stuff that I want to note down from the conversation. So I didn't get a camera access."
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks for that response. Here's another rebuttal: iPhones are known for better battery life and overall experience. How would you handle that?"
+    },
+    {
+      "role": "user",
+      "text": "Yeah, for the price that I get an iPhone for, I can probably get an Android phone, so that way I'm not really handicapped."
+    },
+    {
+      "role": "assistant",
+      "text": "Understood. One more point: iPhones are more secure compared to Android phones. How would you respond to that concern?"
+    },
+    {
+      "role": "user",
+      "text": "If someone has seen the phone, I will give this phone to them and get on to a new one."
+    },
+    {
+      "role": "assistant",
+      "text": "Thank you for handling those rebuttals. I’ve got what I need from that exercise. Now, let’s move on to the next question."
+    },
+    {
+      "role": "user",
+      "text": "Yeah, good one."
+    },
+    {
+      "role": "assistant",
+      "text": "Let me explain the job briefly: you'll be visiting merchants daily to get them to adopt PhonePe's payment solutions, with specific daily and monthly targets. What ideas do you have to achieve your daily targets?"
+    },
+    {
+      "role": "user",
+      "text": "One is the product that I'm selling ought to be good. So once I'm convinced that it is good, I'll be in a good position to sell it in Aliprop and I'm great at storytelling and I try on that. So I'm sure I'll be able to do a good job on that."
+    },
+    {
+      "role": "assistant",
+      "text": "Got it. You plan to focus on the product’s value and use storytelling to sell. Next question: Your usual work day ends at 7:00 PM but you have completed all your targets for the day by 4:00 PM. What will you do after that?"
+    },
+    {
+      "role": "user",
+      "text": "Yeah, probably go to a bar or something."
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks for sharing that. Let’s move on. Where do you see yourself professionally"
+    },
+    {
+      "role": "user",
+      "text": "Thank you very much."
+    },
+    {
+      "role": "assistant",
+      "text": "Where do you see yourself professionally in the next one year?"
+    },
+    {
+      "role": "user",
+      "text": "I don't know the next one month okay, so one year seems to be a long shot."
+    },
+    {
+      "role": "user",
+      "text": "They're moving. All of them."
+    },
+    {
+      "role": "assistant",
+      "text": "I understand. You’re not sure about the next one year. Let’s go to the final question: If you join PhonePe, what will this income mean for your family?"
+    },
+    {
+      "role": "user",
+      "text": "Thank you."
+    },
+    {
+      "role": "assistant",
+      "text": "No problem. If you’re comfortable, could you share a bit about how this income would impact your family situation?"
+    },
+    {
+      "role": "user",
+      "text": "I'll be able to feed all the moms at home, so I really look forward to this opportunity."
+    },
+    {
+      "role": "assistant",
+      "text": "Thank you for sharing that. I’ve noted that the income would be crucial for supporting your household."
+    },
+    {
+      "role": "user",
+      "text": "Okay, I hope that concludes the interview. My battery is already drained from my iPhone."
+    }
+  ]
+}

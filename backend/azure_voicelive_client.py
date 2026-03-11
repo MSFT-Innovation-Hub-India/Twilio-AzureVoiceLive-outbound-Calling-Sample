@@ -30,11 +30,13 @@ logger = logging.getLogger(__name__)
 class AzureVoiceLiveSession:
     """Manages a single session with the Azure Voice Live API."""
 
-    def __init__(self, call_sid: str, on_audio_callback=None, on_transcript_callback=None):
+    def __init__(self, call_sid: str, on_audio_callback=None, on_transcript_callback=None, scenario: dict | None = None, on_function_call=None):
         self.call_sid = call_sid
         self.ws = None
         self._on_audio = on_audio_callback
         self._on_transcript = on_transcript_callback
+        self._on_function_call = on_function_call
+        self._scenario = scenario
         self._receive_task: asyncio.Task | None = None
         self._closed = False
 
@@ -75,39 +77,61 @@ class AzureVoiceLiveSession:
 
     async def _configure_session(self):
         """Send session configuration to Azure Voice Live API."""
+        # Determine system prompt — scenario overrides default
+        instructions = settings.SYSTEM_PROMPT
+        if self._scenario:
+            instructions = self._scenario.get("system_prompt", instructions)
+
+        # Voice config — scenario can override
+        voice_config = {
+            "name": settings.AZURE_TTS_VOICE_NAME,
+            "type": "azure-standard",
+            "temperature": 0.8,
+        }
+        if self._scenario and "voice" in self._scenario:
+            vl = self._scenario["voice"].get("voice_live", {})
+            if vl:
+                voice_config = vl
+
+        # Turn detection — scenario can override
+        turn_detection = {
+            "type": "server_vad",
+            "threshold": 0.5,
+            "prefix_padding_ms": 300,
+            "silence_duration_ms": 500,
+        }
+        if self._scenario and "turn_detection" in self._scenario:
+            turn_detection = self._scenario["turn_detection"]
+
         session_config = {
             "type": "session.update",
             "session": {
                 "modalities": ["text", "audio"],
-                "instructions": settings.SYSTEM_PROMPT,
+                "instructions": instructions,
                 "input_audio_format": "pcm16",
                 "output_audio_format": "pcm16",
                 "input_audio_sampling_rate": 24000,
                 "input_audio_transcription": {
                     "model": "whisper-1",
                 },
-                "turn_detection": {
-                    "type": "server_vad",
-                    "threshold": 0.5,
-                    "prefix_padding_ms": 300,
-                    "silence_duration_ms": 500,
-                },
+                "turn_detection": turn_detection,
                 "input_audio_noise_reduction": {
                     "type": "azure_deep_noise_suppression",
                 },
                 "input_audio_echo_cancellation": {
                     "type": "server_echo_cancellation",
                 },
-                "voice": {
-                    "name": settings.AZURE_TTS_VOICE_NAME,
-                    "type": "azure-standard",
-                    "temperature": 0.8,
-                },
+                "voice": voice_config,
             },
         }
 
+        # Add tools if scenario defines them
+        if self._scenario and self._scenario.get("tools"):
+            session_config["session"]["tools"] = self._scenario["tools"]
+            session_config["session"]["tool_choice"] = "auto"
+
         await self.ws.send(json.dumps(session_config))
-        logger.info(f"[{self.call_sid}] Voice Live session configured")
+        logger.info(f"[{self.call_sid}] Voice Live session configured (scenario: {self._scenario.get('id', 'none') if self._scenario else 'default'})")
 
     async def send_audio(self, audio_bytes: bytes):
         """Send PCM16 audio data to Azure Voice Live API."""
@@ -176,12 +200,55 @@ class AzureVoiceLiveSession:
                 elif msg_type == "input_audio_buffer.committed":
                     logger.debug(f"[{self.call_sid}] Audio buffer committed")
 
+                elif msg_type == "response.done":
+                    await self._handle_response_done(data)
+
         except websockets.exceptions.ConnectionClosed as e:
             logger.info(f"[{self.call_sid}] Voice Live WS closed: {e}")
         except Exception:
             logger.exception(f"[{self.call_sid}] Error in Voice Live receive loop")
         finally:
             self._closed = True
+
+    async def _handle_response_done(self, data: dict):
+        """Handle response.done — check for function calls from the model."""
+        try:
+            response = data.get("response", {})
+            if response.get("status") != "completed":
+                return
+
+            for output_item in response.get("output", []):
+                if output_item.get("type") == "function_call":
+                    fn_name = output_item.get("name", "")
+                    call_id = output_item.get("call_id", "")
+                    try:
+                        arguments = json.loads(output_item.get("arguments", "{}"))
+                    except json.JSONDecodeError:
+                        arguments = {}
+
+                    logger.info(f"[{self.call_sid}] Function call: {fn_name}")
+
+                    # Delegate to the callback if provided
+                    result = {}
+                    if self._on_function_call:
+                        result = await self._on_function_call(fn_name, arguments)
+
+                    # Send function output back to the model
+                    await self.ws.send(json.dumps({
+                        "type": "conversation.item.create",
+                        "item": {
+                            "type": "function_call_output",
+                            "call_id": call_id,
+                            "output": json.dumps(result),
+                        },
+                    }))
+                    # Trigger model to respond after function output
+                    await self.ws.send(json.dumps({
+                        "type": "response.create",
+                        "response": {"modalities": ["text", "audio"]},
+                    }))
+        except Exception:
+            logger.exception(f"[{self.call_sid}] Error handling function call")
 
     async def close(self):
         """Close the Azure Voice Live session."""
