@@ -41,6 +41,11 @@ async def _get_container():
     return _container
 
 
+async def init():
+    """Eagerly initialise the Cosmos DB client and cache credentials."""
+    await _get_container()
+
+
 async def save_result(result: dict) -> None:
     """Upsert an interview result document into Cosmos DB.
 

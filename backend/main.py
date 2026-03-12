@@ -146,7 +146,7 @@ async def initiate_call(req: CallRequest):
     })
 
     # Pre-create the media bridge so it's ready when Twilio connects
-    bridge = MediaBridge(call_id, backend=req.backend, scenario=scenario, candidate_name=req.candidate_name)
+    bridge = MediaBridge(call_id, backend=req.backend, scenario=scenario, candidate_name=req.candidate_name, on_event_callback=_broadcast_event)
     active_sessions[call_id] = bridge
 
     return {
@@ -309,7 +309,7 @@ async def twilio_media_websocket(websocket: WebSocket, call_id: str):
     # Get or create bridge
     bridge = active_sessions.get(call_id)
     if not bridge:
-        bridge = MediaBridge(call_id)
+        bridge = MediaBridge(call_id, on_event_callback=_broadcast_event)
         active_sessions[call_id] = bridge
 
     # Update call status
@@ -393,6 +393,16 @@ async def health():
         "status": "healthy",
         "active_calls": len(active_sessions),
     }
+
+
+@app.on_event("startup")
+async def startup():
+    # Eagerly initialise the Cosmos DB client so credentials are cached
+    # before any call needs to save results.
+    try:
+        await cosmosdb_client.init()
+    except Exception:
+        logger.warning("Cosmos DB pre-init failed — will retry lazily", exc_info=True)
 
 
 @app.on_event("shutdown")

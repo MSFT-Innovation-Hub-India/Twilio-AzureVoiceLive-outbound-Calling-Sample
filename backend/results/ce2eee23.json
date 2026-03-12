@@ -1,0 +1,103 @@
+{
+  "candidate_name": "Srikantan",
+  "call_outcome": "early_termination",
+  "role_confirmed": true,
+  "eligibility": {
+    "transport": "four_wheeler",
+    "smartphone": "iphone",
+    "education_12th_pass": "yes",
+    "target_comfort": "not_asked",
+    "travel_comfort": "not_asked"
+  },
+  "assessment": {
+    "sales_pitch_score": "not_assessed"
+  },
+  "overall_recommendation": "do_not_proceed",
+  "recommendation_justification": "The candidate chose to terminate the call early, leading to incomplete assessment.",
+  "id": "94063919-7932-4a71-b118-e86899f9e204",
+  "call_id": "ce2eee23",
+  "scenario_id": "phonepe_field_sales_screening",
+  "timestamp": "2026-03-12T04:35:51.673958+00:00",
+  "transcripts": [
+    {
+      "role": "assistant",
+      "text": "Hello, Srikantan. Thank you for applying to PhonePe. My name is Aria, and I am the Recruitment Assistant for the talent acquisition team here at PhonePe. This short call will cover some essential questions for the field sales position to see if your experience is a good match before we proceed to an in-person interview. Do you have about 5 to 7 minutes available right now to proceed with these questions?"
+    },
+    {
+      "role": "user",
+      "text": "Bye. "
+    },
+    {
+      "role": "assistant",
+      "text": "No problem at all. I can send you a text message right now with a link to reschedule this call at your convenience. Would you prefer that, or should I call you back tomorrow at the same time?"
+    },
+    {
+      "role": "user",
+      "text": "Now let's proceed."
+    },
+    {
+      "role": "assistant",
+      "text": "Great. Can you confirm you are aware of and interested in the field sales role at PhonePe?"
+    },
+    {
+      "role": "user",
+      "text": "हाँ हाँ बिल्कुल मेरे से हिंदे में बात किजिये प्रीस्ट"
+    },
+    {
+      "role": "assistant",
+      "text": "बिल्कुल, हम हिंदी में बात कर सकते हैं। कृपया पुष्टि करें कि आप PhonePe में फील्ड सेल्स की भूमिका के बारे में जानते हैं और इसमें रुचि रखते हैं?"
+    },
+    {
+      "role": "user",
+      "text": "اه ها بالكل"
+    },
+    {
+      "role": "assistant",
+      "text": "अच्छा, हम पहले सवाल से शुरू करते हैं। आपकी जानकारी के लिए बता दूं कि इस इंटरव्यू की सभी प्रतिक्रियाएं रिकॉर्ड और ट्रांसक्राइब की जाती हैं ताकि निष्पक्ष मूल्यांकन सुनिश्चित हो सके।\n\nपहला सवाल है, क्या आपके पास दैनिक कार्य के लिए उपयोग करने के लिए दोपहिया या चारपहिया वाहन है?"
+    },
+    {
+      "role": "user",
+      "text": "और चार पईया वाहन है"
+    },
+    {
+      "role": "assistant",
+      "text": "बहुत अच्छा। अगला सवाल है, क्या आपके पास एंड्रॉइड स्मार्टफोन है या कोई और स्मार्टफोन?"
+    },
+    {
+      "role": "user",
+      "text": "Yeah, and then continue speaking in English."
+    },
+    {
+      "role": "assistant",
+      "text": "Sure. Do you own an Android smartphone or any other smartphone?"
+    },
+    {
+      "role": "user",
+      "text": "I own an iPhone, by the way."
+    },
+    {
+      "role": "assistant",
+      "text": "Thank you for sharing that. For compliance purposes, we must confirm your education. Do you have a valid 12th pass certificate?"
+    },
+    {
+      "role": "user",
+      "text": "Yeah, I do"
+    },
+    {
+      "role": "assistant",
+      "text": "The role is primarily target-based sales, requiring you to meet monthly goals. Are you comfortable with a target-based sales job?"
+    },
+    {
+      "role": "user",
+      "text": "Yeah, one second. Can you just hold on? Hey, there. Hello?"
+    },
+    {
+      "role": "assistant",
+      "text": "Sure, take your time. I'm here when you're ready to continue."
+    },
+    {
+      "role": "user",
+      "text": "I think let's close this call."
+    }
+  ]
+}

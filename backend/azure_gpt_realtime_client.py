@@ -26,12 +26,13 @@ logger = logging.getLogger(__name__)
 class AzureVoiceLiveSession:
     """Manages a single session with Azure Voice Live (GPT-Realtime) API."""
 
-    def __init__(self, call_sid: str, on_audio_callback=None, on_transcript_callback=None, scenario: dict | None = None, on_function_call=None, candidate_name: str | None = None):
+    def __init__(self, call_sid: str, on_audio_callback=None, on_transcript_callback=None, scenario: dict | None = None, on_function_call=None, candidate_name: str | None = None, on_interrupt_callback=None):
         self.call_sid = call_sid
         self.ws = None
         self._on_audio = on_audio_callback
         self._on_transcript = on_transcript_callback
         self._on_function_call = on_function_call
+        self._on_interrupt = on_interrupt_callback
         self._scenario = scenario
         self._candidate_name = candidate_name
         self._receive_task: asyncio.Task | None = None
@@ -40,7 +41,7 @@ class AzureVoiceLiveSession:
         self._speech_active = False
         self._response_in_progress = False
         self._pending_interrupt_task: asyncio.Task | None = None
-        self._interrupt_debounce_ms = 450
+        self._interrupt_debounce_ms = 350
 
     async def connect(self):
         """Establish WebSocket connection to Azure Voice Live API using DefaultAzureCredential."""
@@ -275,6 +276,9 @@ class AzureVoiceLiveSession:
             await self.ws.send(json.dumps({"type": "response.cancel"}))
             await self.ws.send(json.dumps({"type": "input_audio_buffer.clear"}))
             self._response_in_progress = False
+            # Flush Twilio's outbound audio buffer so buffered speech stops immediately
+            if self._on_interrupt:
+                await self._on_interrupt()
             logger.info(f"[{self.call_sid}] Interrupted — cancelled response for barge-in")
         except Exception:
             logger.exception(f"[{self.call_sid}] Error during interrupt")

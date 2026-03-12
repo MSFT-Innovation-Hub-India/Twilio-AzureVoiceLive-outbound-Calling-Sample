@@ -1,0 +1,127 @@
+{
+  "candidate_name": "Srikantan",
+  "call_outcome": "early_termination",
+  "role_confirmed": true,
+  "eligibility": {
+    "transport": "two_wheeler",
+    "smartphone": "iphone",
+    "education_12th_pass": "yes",
+    "target_comfort": "yes",
+    "travel_comfort": "yes"
+  },
+  "assessment": {
+    "sales_pitch_score": "not_assessed"
+  },
+  "overall_recommendation": "do_not_proceed",
+  "recommendation_justification": "Candidate chose to end the call early before completing the assessment. Unable to evaluate sales pitch skills.",
+  "id": "7acedda7-fb61-40a5-ab3d-d59e315f6474",
+  "call_id": "59f616d2",
+  "scenario_id": "phonepe_field_sales_screening",
+  "timestamp": "2026-03-12T04:24:37.805386+00:00",
+  "transcripts": [
+    {
+      "role": "assistant",
+      "text": "Hello, thank you for applying to PhonePe."
+    },
+    {
+      "role": "user",
+      "text": "Hello there."
+    },
+    {
+      "role": "assistant",
+      "text": "My name is Aria, and I am the Recruitment Assistant for the talent acquisition team here at PhonePe. This short call will cover some essential questions for the field sales position to see if your experience is a good match before we proceed to an in-person interview. Do you have about 5 to 7 minutes available right now to proceed with these questions?"
+    },
+    {
+      "role": "user",
+      "text": "Bye."
+    },
+    {
+      "role": "assistant",
+      "text": "No problem at all. I can send you a text message right now with a link to reschedule this call at your convenience. Would you prefer that, or should I call you back tomorrow at the same time?"
+    },
+    {
+      "role": "user",
+      "text": "Yeah, sure"
+    },
+    {
+      "role": "assistant",
+      "text": "Thank you, Srikantan. I'll send you a link to reschedule the call at your convenience. Have a great day!"
+    },
+    {
+      "role": "user",
+      "text": "Now, let's proceed."
+    },
+    {
+      "role": "assistant",
+      "text": "Great. Let's begin with the first question now. Please note that all answers are recorded and transcribed to ensure a fair evaluation. Can you confirm you are aware of and interested in the field sales role at PhonePe?"
+    },
+    {
+      "role": "user",
+      "text": "Yeah"
+    },
+    {
+      "role": "assistant",
+      "text": "Excellent. We'll move to the next question now. The role requires market movement. Do you have access to a two-wheeler or a four-wheeler for daily work?"
+    },
+    {
+      "role": "user",
+      "text": "Yes, I have a two-wheeler."
+    },
+    {
+      "role": "assistant",
+      "text": "Thank you. Next, do you own an Android smartphone or any other smartphone?"
+    },
+    {
+      "role": "user",
+      "text": "Just hold on, hold on, hold on."
+    },
+    {
+      "role": "assistant",
+      "text": "Sure, take your time. Let me know when you're ready to continue."
+    },
+    {
+      "role": "user",
+      "text": "Yeah, I have an iPhone. I have an iPhone. Yes, yes, let's continue."
+    },
+    {
+      "role": "assistant",
+      "text": "Thank you for confirming. For compliance purposes, we must confirm your education. Do you have a valid 12th pass certificate?"
+    },
+    {
+      "role": "user",
+      "text": "Yeah, I do"
+    },
+    {
+      "role": "assistant",
+      "text": "The role is primarily target-based sales, requiring you to meet monthly goals. Are you comfortable with a target-based sales job?"
+    },
+    {
+      "role": "user",
+      "text": "Yeah, I am"
+    },
+    {
+      "role": "assistant",
+      "text": "The job requires some amount of intra-city travel to meet merchants. Are you comfortable with this daily intra-city travel requirement?"
+    },
+    {
+      "role": "user",
+      "text": "Yeah, it's okay."
+    },
+    {
+      "role": "assistant",
+      "text": "Now, I'd like to do a quick exercise. Imagine I am an iPhone user. I'd like you to pitch me on purchasing an Android smartphone or any other smartphone you'd recommend. Go ahead."
+    },
+    {
+      "role": "assistant",
+      "text": "Certainly, Srikantan. Thank you for your time. We'll review the information you've provided and get back to you regarding the next steps. Have a great day!"
+    },
+    {
+      "role": "user",
+      "text": "So, can we end this call now, can we end this call now?"
+    },
+    {
+      "role": "user",
+      "text": "Sure, thank you."
+    }
+  ]
+}

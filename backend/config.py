@@ -39,7 +39,7 @@ class Settings:
     # Agent
     SYSTEM_PROMPT: str = os.getenv(
         "SYSTEM_PROMPT",
-        "You are a helpful voice assistant. Be concise and conversational. You are speaking with someone on a phone call.",
+        "You are a helpful voice assistant. Be concise and conversational. You are speaking with someone on a phone call. You can speak in English and Hindi. If the user speaks in Hindi or asks you to switch to Hindi, do so immediately.",
     )
     VOICE: str = os.getenv("VOICE", "alloy")
 

@@ -85,11 +85,12 @@ RESULTS_DIR.mkdir(exist_ok=True)
 class MediaBridge:
     """Bridges Twilio telephony audio with an Azure AI backend."""
 
-    def __init__(self, call_sid: str, backend: str = BACKEND_GPT_REALTIME, scenario: dict | None = None, candidate_name: str | None = None):
+    def __init__(self, call_sid: str, backend: str = BACKEND_GPT_REALTIME, scenario: dict | None = None, candidate_name: str | None = None, on_event_callback=None):
         self.call_sid = call_sid
         self.backend = backend
         self.scenario = scenario
         self.candidate_name = candidate_name
+        self._on_event = on_event_callback
         self.twilio_ws: WebSocket | None = None
         self.azure_session = None
         self.stream_sid: str | None = None
@@ -113,6 +114,7 @@ class MediaBridge:
             scenario=self.scenario,
             on_function_call=self._handle_function_call,
             candidate_name=self.candidate_name,
+            on_interrupt_callback=self._flush_twilio_audio,
         )
         logger.info(f"[{self.call_sid}] Using backend: {self.backend}, scenario: {self.scenario.get('id') if self.scenario else 'default'}")
 
@@ -212,6 +214,13 @@ class MediaBridge:
         if not partial:
             self.transcripts.append({"role": role, "text": text})
             logger.info(f"[{self.call_sid}] [{role}]: {text}")
+            # Broadcast to frontend event subscribers
+            if self._on_event:
+                await self._on_event(self.call_sid, {
+                    "type": "transcript",
+                    "role": role,
+                    "text": text,
+                })
 
     async def _handle_function_call(self, fn_name: str, arguments: dict) -> dict:
         """Handle function calls from the AI model (e.g., saving interview results)."""
@@ -233,16 +242,31 @@ class MediaBridge:
             result_file.write_text(json.dumps(arguments, indent=2, ensure_ascii=False), encoding="utf-8")
             logger.info(f"[{self.call_sid}] Interview results saved to {result_file}")
 
-            # Persist to Cosmos DB
-            try:
-                await cosmosdb_client.save_result(arguments)
-            except Exception:
-                logger.exception(f"[{self.call_sid}] Failed to persist results to Cosmos DB")
+            # Persist to Cosmos DB (fire-and-forget so bridge close doesn't cancel it)
+            asyncio.ensure_future(self._save_to_cosmosdb(arguments))
 
             return {"status": "saved", "call_id": self.call_sid}
 
         logger.warning(f"[{self.call_sid}] Unknown function: {fn_name}")
         return {"error": f"Unknown function: {fn_name}"}
+
+    async def _flush_twilio_audio(self):
+        """Send a clear message to Twilio to flush any buffered outbound audio."""
+        if self._closed or not self.twilio_ws or not self.stream_sid:
+            return
+        try:
+            msg = {"event": "clear", "streamSid": self.stream_sid}
+            await self.twilio_ws.send_text(json.dumps(msg))
+            logger.info(f"[{self.call_sid}] Flushed Twilio audio buffer for barge-in")
+        except Exception:
+            logger.exception(f"[{self.call_sid}] Error flushing Twilio audio buffer")
+
+    async def _save_to_cosmosdb(self, arguments: dict):
+        """Persist results to Cosmos DB independently of bridge lifecycle."""
+        try:
+            await cosmosdb_client.save_result(arguments)
+        except Exception:
+            logger.exception(f"[{self.call_sid}] Failed to persist results to Cosmos DB")
 
     async def close(self):
         """Clean up the media bridge."""
