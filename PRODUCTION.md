@@ -18,6 +18,8 @@ production scale — handling tens to hundreds of concurrent calls.
 - [5. Graceful Shutdown](#5-graceful-shutdown)
 - [6. Observability](#6-observability)
 - [7. Infrastructure Recommendations](#7-infrastructure-recommendations)
+- [8. Cosmos DB Persistence at Scale](#8-cosmos-db-persistence-at-scale)
+- [9. Interruption Handling (Barge-in) Considerations](#9-interruption-handling-barge-in-considerations)
 - [Capacity Planning](#capacity-planning)
 
 ---
@@ -52,6 +54,55 @@ The sample is already designed with per-call isolation:
 
 This means **the current code can handle multiple simultaneous calls correctly**.
 The constraints that appear at scale are operational, not architectural.
+
+### Why FastAPI and MediaBridge Must Share a Process
+
+FastAPI and MediaBridge are **tightly coupled by in-process Python references**
+and cannot run on separate machines or in separate processes without significant
+rearchitecting:
+
+1. **Direct object references** — MediaBridge holds the FastAPI `WebSocket`
+   object (`self.twilio_ws`) and calls `send_json()` on it directly. That
+   WebSocket object only exists in the FastAPI process's memory.
+
+2. **In-memory session dict** — `active_sessions[call_id] = bridge` is a plain
+   Python dict. When Twilio opens the media WebSocket, FastAPI looks up the
+   bridge from this dict. A separate process would not see it.
+
+3. **Python callbacks** — `on_event_callback` and `on_interrupt_callback` are
+   closures that capture the `call_id` and call `_broadcast_event()`. These
+   only work within the same Python interpreter.
+
+**This is by design for simplicity.** Separating them would require replacing
+these with an external message bus (Redis Pub/Sub, gRPC, etc.), which adds
+complexity without benefit until you need thousands of concurrent calls.
+
+### Development → Production: Replacing ngrok
+
+In development, ngrok tunnels Twilio's traffic to your local machine through
+three stitched connections (see [NGROK_TUNNEL.md](NGROK_TUNNEL.md)):
+
+```
+DEVELOPMENT:
+Twilio ──WSS──▶ ngrok cloud ──tunnel──▶ ngrok CLI ──WS──▶ FastAPI:8000
+                 (relay hop)            (your machine)
+                 Adds ~30-80ms latency per direction
+
+PRODUCTION (Azure Container Apps):
+Twilio ──WSS──▶ Container Apps ingress ──▶ FastAPI:8000 (same container)
+                (public URL, TLS built-in)
+                Single hop. No tunnel.
+```
+
+In production, ngrok is **eliminated entirely**. Azure Container Apps provides:
+- A public URL (e.g., `https://voice-agent.azurecontainerapps.io`)
+- TLS termination with managed certificates
+- Native WebSocket support (`transport: auto`)
+- Session affinity (sticky sessions) for WebSocket state
+
+The only code change: update `PUBLIC_URL` in `.env`. The same FastAPI endpoints,
+same MediaBridge, same Azure session code — Twilio just connects to a different
+URL.
 
 ---
 
@@ -333,6 +384,11 @@ Azure portal.
 
 #### Azure Container Apps (Recommended)
 
+Azure Container Apps **fully replaces ngrok** in production. It provides the
+public endpoint that Twilio connects to directly — no tunnel, no extra hop.
+The same FastAPI + MediaBridge code runs inside the container unchanged; only
+the `PUBLIC_URL` environment variable changes.
+
 ```
 ┌──────────────────────────────────────────────────┐
 │               Azure Container Apps               │
@@ -394,6 +450,85 @@ scale:
 
 ---
 
+### 8. Cosmos DB Persistence at Scale
+
+**Problem:** Each completed call saves interview results (transcript, scores,
+metadata) to Azure Cosmos DB. At high concurrency, synchronous writes during
+call teardown would delay the call cleanup and block the event loop.
+
+**Current Solution — Fire-and-Forget:**
+
+The codebase already uses `asyncio.ensure_future()` for Cosmos DB writes. The
+call completes and releases resources immediately; the write happens in the
+background. This is acceptable because a failed write doesn't affect the caller
+experience.
+
+```python
+# media_bridge.py — fire-and-forget persistence
+asyncio.ensure_future(cosmosdb_client.save_result(interview_data))
+```
+
+**Scaling Considerations:**
+
+| Concern | Solution |
+|---------|----------|
+| **Credential caching** | `DefaultAzureCredential` is instantiated once at startup via `cosmosdb_client.init()`. Token refresh is handled internally by the SDK. |
+| **Connection pooling** | The `azure-cosmos` SDK maintains an internal HTTP connection pool. A single `CosmosClient` instance is shared across all calls — never create one per request. |
+| **Write throughput** | Cosmos DB NoSQL can handle thousands of writes/sec at the default 400 RU/s provisioning. For 100+ concurrent calls, consider autoscale provisioning (400–4000 RU/s). |
+| **Retry policy** | The SDK has built-in retry logic for transient errors (429 throttling, network blips). No custom retry needed. |
+| **Partition key** | Documents are partitioned by `call_id`, ensuring even distribution and point-read efficiency. |
+
+**Production Hardening:**
+
+```python
+# Optional: Add a timeout to prevent leaked tasks
+async def _save_with_timeout(data, timeout=10):
+    try:
+        await asyncio.wait_for(
+            cosmosdb_client.save_result(data),
+            timeout=timeout
+        )
+    except asyncio.TimeoutError:
+        logger.warning("Cosmos DB write timed out — result may not be persisted")
+    except Exception as e:
+        logger.error(f"Cosmos DB write failed: {e}")
+
+# Usage
+asyncio.ensure_future(_save_with_timeout(interview_data))
+```
+
+---
+
+### 9. Interruption Handling (Barge-in) Considerations
+
+**Problem:** On PSTN calls via Twilio, the AI generates audio faster than
+real-time. By the time Azure has finished generating a response, Twilio may
+still be playing several seconds of buffered audio. If the user interrupts
+(barge-in), the stale audio must be flushed immediately.
+
+**Current Implementation:**
+
+The codebase handles this with a two-step approach on `speech_started` events:
+
+1. **Always flush Twilio's playback buffer** — send a `clear` event to Twilio
+   regardless of `_response_in_progress` state. This is the critical insight:
+   Azure may have already finished generating (so `_response_in_progress` is
+   `False`), but Twilio is still playing buffered audio.
+
+2. **Cancel generation if still active** — if `_response_in_progress` is `True`,
+   send `response.cancel` to Azure and set `_mute_audio` to discard in-flight
+   audio deltas until `response.done` is received.
+
+**Production Scaling Notes:**
+
+| Concern | Detail |
+|---------|--------|
+| **Twilio `clear` reliability** | The `clear` event is a best-effort operation. On rare occasions, a chunk may still be played after the clear is sent. This is acceptable for voice UX. |
+| **Latency sensitivity** | The time between the user speaking and the `clear` event reaching Twilio goes through: Azure VAD → WebSocket → ngrok → Twilio. In production, replace ngrok with a direct public endpoint (Azure Container Apps) to reduce this by ~50-100ms. |
+| **False interrupts (background noise)** | Server VAD threshold is set to 0.7 (high sensitivity filter) with `prefix_padding_ms: 300` to avoid triggering barge-in from ambient noise. These values were tuned for Indian PSTN call quality and may need adjustment for other regions. |
+
+---
+
 ## Capacity Planning
 
 ### Twilio Limits
@@ -439,3 +574,7 @@ scale:
 - [ ] Configure auto-scaling rules
 - [ ] Set up health checks and alerting
 - [ ] Load test with target concurrent call count
+- [ ] Verify Cosmos DB fire-and-forget writes complete under load
+- [ ] Tune Cosmos DB RU/s provisioning for expected call volume
+- [ ] Replace ngrok with direct public endpoint to reduce barge-in latency
+- [ ] Tune VAD threshold and prefix_padding_ms for target PSTN region

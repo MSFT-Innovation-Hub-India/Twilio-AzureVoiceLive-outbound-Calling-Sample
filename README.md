@@ -195,9 +195,14 @@ Caller's phone                                                    Azure Voice Li
 │   ├── media_bridge.py      # Bridges Twilio audio ↔ Azure Voice Live
 │   ├── azure_gpt_realtime_client.py  # Azure OpenAI Realtime API WebSocket client
 │   ├── azure_voicelive_client.py  # Azure Voice Live API WebSocket client
+│   ├── cosmosdb_client.py   # Azure Cosmos DB client (interview result persistence)
+│   ├── cosmosdb_network.py  # Cosmos DB network access check (management API)
+│   ├── scenario_manager.py  # Loads and manages scenario configurations
 │   ├── requirements.txt     # Python dependencies
 │   ├── .env.example         # Environment variable template
-│   └── .env                 # Your local config (git-ignored)
+│   ├── .env                 # Your local config (git-ignored)
+│   ├── scenarios/           # Scenario JSON configs (prompts, VAD, tools)
+│   └── results/             # Local JSON backups of interview results
 ├── frontend/
 │   ├── src/
 │   │   └── App.jsx          # React UI — call control + live transcript
@@ -215,6 +220,9 @@ Caller's phone                                                    Azure Voice Li
 | **media_bridge.py** | Bidirectional audio bridge. Converts mulaw 8 kHz ↔ PCM16 24 kHz using `audioop`. Manages the lifecycle of both the Twilio and Azure WebSocket streams. |
 | **azure_gpt_realtime_client.py** | Opens a WSS connection to **Azure OpenAI Realtime API** (`/openai/realtime`). Authenticates via `DefaultAzureCredential` with the `cognitiveservices.azure.com` scope. Configures server VAD + Whisper transcription. Streams audio in/out and emits transcript events. |
 | **azure_voicelive_client.py** | Connects to the **Azure Voice Live API** (`/voice-live/realtime`) on an Azure AI Services (Cognitive Services) endpoint. Uses the `ai.azure.com` scope, supports Azure Speech voices, noise suppression, and echo cancellation. Same interface as `azure_gpt_realtime_client.py`. |
+| **cosmosdb_client.py** | Async Azure Cosmos DB client using `DefaultAzureCredential`. Eagerly initialised at startup to avoid credential timeout during calls. Upserts interview result documents. |
+| **cosmosdb_network.py** | Checks Cosmos DB network access via the Azure Management API. Reports whether public access is enabled so the UI can warn before a call. |
+| **scenario_manager.py** | Loads scenario JSON files from `scenarios/`. Each scenario defines a system prompt, VAD settings, voice config, and tools. |
 | **config.py** | Loads `.env` and exposes typed settings. Builds the Azure WSS URL from endpoint, deployment, and API version. |
 | **App.jsx** | React UI with phone number input, call/hangup controls, status badge, and a chat-style live transcript view. |
 
@@ -222,9 +230,10 @@ Caller's phone                                                    Azure Voice Li
 
 | Document | Description |
 |----------|-------------|
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Solution architecture diagram — color-coded component boxes, 30 numbered flow steps, and a full legend explaining every connection. |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Solution architecture diagram — development (ngrok) and production (Azure Container Apps) diagrams, per-call isolation model, 33 numbered flow steps, interruption handling, and Cosmos DB persistence flows. |
 | [AUDIO_PIPELINE.md](AUDIO_PIPELINE.md) | Deep dive into mulaw vs PCM16 encoding, sample rate resampling, byte-level walkthrough, and why the conversion pipeline is necessary. |
-| [PRODUCTION.md](PRODUCTION.md) | Production architecture guide — scaling bottlenecks, credential caching, multi-worker deployment, observability, and Azure Container Apps configuration. |
+| [PRODUCTION.md](PRODUCTION.md) | Production architecture guide — dev→prod transition (ngrok elimination), in-process coupling constraints, scaling bottlenecks, multi-worker deployment, Cosmos DB at scale, interruption handling considerations, and Azure Container Apps configuration. |
+| [NGROK_TUNNEL.md](NGROK_TUNNEL.md) | Protocol-level explanation of how ngrok tunneling works — the three connections, frame-by-frame walkthrough, latency impact, and why it's replaced by Azure Container Apps in production. |
 
 ---
 
@@ -287,6 +296,12 @@ npm install
 
 ### Step 4: Start ngrok tunnel
 
+> **Development only.** ngrok tunnels Twilio's traffic to your local machine.
+> In production (Azure Container Apps), ngrok is eliminated entirely — Twilio
+> connects directly to the Container Apps public URL. See
+> [NGROK_TUNNEL.md](NGROK_TUNNEL.md) for protocol-level details and
+> [PRODUCTION.md](PRODUCTION.md) for the production architecture.
+
 ```bash
 ngrok http 8000
 ```
@@ -305,18 +320,41 @@ cp .env.example .env
 Edit `.env` with your actual values:
 
 ```ini
+# ── Twilio ───────────────────────────────────────────────────
 TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 TWILIO_AUTH_TOKEN=your_auth_token_here
 TWILIO_PHONE_NUMBER=+12131234567
 
-AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
+# ── Azure OpenAI Realtime API (GPT-Realtime backend) ────────
+# Authentication uses DefaultAzureCredential (managed identity / Azure CLI)
+AZURE_OPENAI_ENDPOINT=https://your-resource.cognitiveservices.azure.com
 AZURE_OPENAI_DEPLOYMENT=gpt-realtime
 AZURE_OPENAI_API_VERSION=2025-04-01-preview
 
-PUBLIC_URL=https://4bcc-167-220-238-22.ngrok-free.app
+# ── Azure Voice Live API (Voice Live backend) ───────────────
+AZURE_VOICE_LIVE_ENDPOINT=https://your-resource.cognitiveservices.azure.com
+AZURE_VOICE_LIVE_API_VERSION=2025-05-01-preview
+VOICE_LIVE_MODEL=gpt-realtime
+AZURE_TTS_VOICE_NAME=en-IN-AartiIndicNeural
 
+# ── Server ───────────────────────────────────────────────────
+HOST=0.0.0.0
+PORT=8000
+PUBLIC_URL=https://xxxx-xxx-xxx-xxx-xx.ngrok-free.app
+
+# ── Agent Configuration ─────────────────────────────────────
 SYSTEM_PROMPT=You are a helpful voice assistant. Be concise and conversational.
 VOICE=alloy
+
+# ── Azure Cosmos DB (interview result persistence) ──────────
+AZURE_COSMOS_DB_ENDPOINT=https://your-account.documents.azure.com:443/
+AZURE_COSMOS_DB_DATABASE=db001
+AZURE_COSMOS_DB_CONTAINER=sales-screening-oall-output
+
+# ── Azure Cosmos DB Management (auto network access check) ──
+AZURE_SUBSCRIPTION_ID=your-subscription-id
+AZURE_RESOURCE_GROUP=your-resource-group
+AZURE_COSMOS_DB_ACCOUNT_NAME=your-cosmos-account-name
 ```
 
 ### Step 6: Log in to Azure
@@ -379,19 +417,58 @@ Opens the React dev server at `http://localhost:3000`.
 
 ## Configuration
 
+### Twilio
+
 | Variable | Description |
 |----------|-------------|
 | `TWILIO_ACCOUNT_SID` | Your Twilio Account SID (starts with `AC`) |
 | `TWILIO_AUTH_TOKEN` | Twilio Auth Token |
 | `TWILIO_PHONE_NUMBER` | Your Twilio phone number (E.164 format) |
-| `AZURE_OPENAI_ENDPOINT` | Azure OpenAI endpoint URL |
-| `AZURE_OPENAI_DEPLOYMENT` | Deployment name (default: `gpt-4o-realtime-preview`) |
-| `AZURE_OPENAI_API_VERSION` | API version (default: `2025-04-01-preview`) |
-| `PUBLIC_URL` | Public URL of your backend (ngrok URL) |
-| `SYSTEM_PROMPT` | System prompt for the AI agent |
-| `VOICE` | Voice for speech synthesis (default: `alloy`) |
 
-> **Note:** No Azure OpenAI API key is needed — authentication uses `DefaultAzureCredential` (Azure CLI, managed identity, etc.).
+### Azure OpenAI Realtime API (GPT-Realtime backend)
+
+| Variable | Description |
+|----------|-------------|
+| `AZURE_OPENAI_ENDPOINT` | Azure AI Services / OpenAI endpoint URL |
+| `AZURE_OPENAI_DEPLOYMENT` | Deployment name (e.g. `gpt-realtime`) |
+| `AZURE_OPENAI_API_VERSION` | API version (default: `2025-04-01-preview`) |
+
+### Azure Voice Live API (Voice Live backend)
+
+| Variable | Description |
+|----------|-------------|
+| `AZURE_VOICE_LIVE_ENDPOINT` | Azure AI Services (Cognitive Services) endpoint URL |
+| `AZURE_VOICE_LIVE_API_VERSION` | API version (default: `2025-05-01-preview`) |
+| `VOICE_LIVE_MODEL` | Model deployment name (e.g. `gpt-realtime`) |
+| `AZURE_TTS_VOICE_NAME` | Azure Speech voice for TTS (e.g. `en-IN-AartiIndicNeural`) |
+
+### Server
+
+| Variable | Description |
+|----------|-------------|
+| `HOST` | Bind address (default: `0.0.0.0`) |
+| `PORT` | Server port (default: `8000`) |
+| `PUBLIC_URL` | Public URL of your backend (ngrok URL in dev) |
+
+### Agent
+
+| Variable | Description |
+|----------|-------------|
+| `SYSTEM_PROMPT` | System prompt for the AI agent |
+| `VOICE` | Voice for GPT-Realtime speech synthesis (default: `alloy`) |
+
+### Azure Cosmos DB
+
+| Variable | Description |
+|----------|-------------|
+| `AZURE_COSMOS_DB_ENDPOINT` | Cosmos DB account endpoint (e.g. `https://account.documents.azure.com:443/`) |
+| `AZURE_COSMOS_DB_DATABASE` | Database name (e.g. `db001`) |
+| `AZURE_COSMOS_DB_CONTAINER` | Container name for interview results |
+| `AZURE_SUBSCRIPTION_ID` | Azure subscription ID (for network access check) |
+| `AZURE_RESOURCE_GROUP` | Resource group containing the Cosmos DB account |
+| `AZURE_COSMOS_DB_ACCOUNT_NAME` | Cosmos DB account name (for management API calls) |
+
+> **Note:** No API keys are needed for any Azure service — all authentication uses `DefaultAzureCredential` (Azure CLI, managed identity, etc.).
 
 ---
 
@@ -401,6 +478,8 @@ Opens the React dev server at `http://localhost:3000`.
 |--------|------|-------------|
 | `POST` | `/api/call` | Place outbound call |
 | `GET` | `/api/calls` | List active calls |
+| `GET` | `/api/scenarios` | List available scenarios |
+| `GET` | `/api/cosmosdb/network-status` | Check Cosmos DB network accessibility |
 | `POST` | `/twilio/twiml` | TwiML response for call flow |
 | `POST` | `/twilio/status` | Twilio status callback |
 | `WS` | `/ws/media/{call_id}` | Twilio media stream (audio) |
@@ -415,10 +494,58 @@ Opens the React dev server at `http://localhost:3000`.
 | Frontend | React 19 + Vite |
 | Backend | Python 3.11+ / FastAPI / Uvicorn |
 | Telephony | Twilio Programmable Voice + Media Streams |
-| AI | Azure OpenAI GPT-Realtime (Voice Live API) |
-| Auth | DefaultAzureCredential (azure-identity) |
-| Audio | audioop (mulaw ↔ PCM16) |
+| AI | Azure OpenAI GPT-Realtime / Azure Voice Live API |
+| Persistence | Azure Cosmos DB for NoSQL |
+| Auth | DefaultAzureCredential (azure-identity) — no API keys |
+| Audio | audioop (mulaw ↔ PCM16), gpt-4o-transcribe |
 | Tunnel | ngrok (local dev only) |
+
+---
+
+## Why Azure Cosmos DB?
+
+Interview results (scores, transcripts, metadata) must be persisted reliably
+after every call. Azure Cosmos DB for NoSQL is used because:
+
+1. **Schema-flexible documents** — Each call produces a JSON document with
+   varying structure (different scenarios have different scoring fields).
+   Cosmos DB's schemaless NoSQL model stores these directly without migrations.
+
+2. **Low-latency writes** — Results are saved during the call via a
+   `save_interview_results` function call from the AI model. Cosmos DB's
+   single-digit-millisecond writes ensure this doesn't block the audio
+   pipeline.
+
+3. **DefaultAzureCredential (no keys)** — The same `DefaultAzureCredential`
+   pattern used for Azure OpenAI and Voice Live API works for Cosmos DB,
+   keeping the codebase key-free. In production, managed identity provides
+   seamless auth with no secrets to rotate.
+
+4. **Fire-and-forget persistence** — The Cosmos DB save is dispatched via
+   `asyncio.ensure_future()` so it completes independently of the media
+   bridge lifecycle. Even if the call disconnects immediately after the AI
+   invokes the save function, the write still completes.
+
+5. **Eager client initialisation** — The Cosmos DB client is initialised at
+   application startup (`@app.on_event("startup")`) rather than on first use.
+   This avoids a 4–5 second credential acquisition delay (IMDS timeout on
+   non-Azure machines falling back to Azure CLI) during a live call.
+
+### Cosmos DB Setup
+
+1. Create an Azure Cosmos DB for NoSQL account
+2. Create a database (e.g. `db001`) and container (e.g. `sales-screening-oall-output`)
+   with `/id` as the partition key
+3. Assign the **Cosmos DB Built-in Data Contributor** role to your identity:
+   ```bash
+   az cosmosdb sql role assignment create \
+     --account-name <cosmos-account> \
+     --resource-group <rg> \
+     --role-definition-name "Cosmos DB Built-in Data Contributor" \
+     --scope "/" \
+     --principal-id <your-object-id>
+   ```
+4. Set the `AZURE_COSMOS_DB_*` variables in `.env`
 
 ---
 
