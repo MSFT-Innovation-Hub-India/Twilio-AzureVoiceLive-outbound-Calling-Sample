@@ -19,6 +19,10 @@ Arrows use three styles:
 > traffic to `localhost:8000`. See [NGROK_TUNNEL.md](NGROK_TUNNEL.md) for a
 > protocol-level explanation of how ngrok tunneling works.
 
+![Local Development Environment Architecture](docs/architecture-dev-environment.png)
+
+### Detailed Development Flow (Mermaid)
+
 ```mermaid
 graph LR
     classDef userZone fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#0D47A1
@@ -466,6 +470,10 @@ from the internet.
 > In production, **ngrok is eliminated entirely**. Azure Container Apps provides
 > a public URL with TLS termination and native WebSocket support. Twilio calls
 > the Container Apps URL directly — no tunnel, no extra hop.
+
+![Azure Production Architecture](docs/architecture-azure.png)
+
+### Development vs Production Comparison
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
