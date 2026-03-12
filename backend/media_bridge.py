@@ -10,6 +10,7 @@ import audioop
 import base64
 import json
 import logging
+import re
 import struct
 import uuid
 from datetime import datetime, timezone
@@ -209,9 +210,31 @@ class MediaBridge:
         except Exception:
             logger.exception(f"[{self.call_sid}] Error sending audio to Twilio")
 
+    # Common Whisper hallucinations on silence/echo (case-insensitive)
+    _WHISPER_HALLUCINATIONS = {
+        "bye", "bye.", "bye-bye", "bye-bye.", "bye bye", "bye bye.",
+        "thank you.", "thanks.", "thank you", "thanks",
+        "you", "the end", "the end.", "...",
+        "have a nice day.", "have a nice day",
+        "good bye", "good bye.", "goodbye", "goodbye.",
+        "İyi hayırdır?",
+    }
+
+    # Regex to strip special tokens like <|audio_text|>, <|caption_quality_8|>
+    _SPECIAL_TOKEN_RE = re.compile(r"<\|[^|]+\|>")
+
     async def _handle_transcript(self, role: str, text: str, partial: bool = False):
         """Handle transcript updates for logging/UI."""
+        # Strip special model tokens (e.g. from gpt-4o-transcribe)
+        text = self._SPECIAL_TOKEN_RE.sub("", text).strip()
+        if not text:
+            return
+
         if not partial:
+            # Filter out Whisper hallucinations on user side
+            if role == "user" and text.strip().lower() in self._WHISPER_HALLUCINATIONS:
+                logger.debug(f"[{self.call_sid}] Filtered Whisper hallucination: '{text}'")
+                return
             self.transcripts.append({"role": role, "text": text})
             logger.info(f"[{self.call_sid}] [{role}]: {text}")
             # Broadcast to frontend event subscribers
@@ -251,7 +274,24 @@ class MediaBridge:
         return {"error": f"Unknown function: {fn_name}"}
 
     async def _flush_twilio_audio(self):
-        """Send a clear message to Twilio to flush any buffered outbound audio."""
+        """Flush Twilio's outbound audio buffer by sending a ``clear`` event.
+
+        This is the key mechanism for making barge-in work over Twilio PSTN.
+        Twilio Media Streams maintains an internal playout queue of ``media``
+        events sent by the backend.  When the user interrupts, we must discard
+        that queue instantly — otherwise the AI's previous response keeps
+        playing over the caller's speech for several seconds.
+
+        Twilio's ``clear`` message (see Twilio docs: Media Streams WebSocket
+        Messages > Clear Message) empties the queue and sends a ``mark``
+        event back to confirm the flush.
+
+        This callback is invoked by the Azure client on every
+        ``input_audio_buffer.speech_started`` event, **regardless** of whether
+        the Azure response is still being generated, because Azure often
+        finishes generating long before Twilio finishes playing the buffered
+        audio.
+        """
         if self._closed or not self.twilio_ws or not self.stream_sid:
             return
         try:

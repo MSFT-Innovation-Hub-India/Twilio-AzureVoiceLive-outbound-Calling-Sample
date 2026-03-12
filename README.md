@@ -478,6 +478,139 @@ PUBLIC_URL=https://your-app.azurecontainerapps.io     # Stable URL, no ngrok
 
 ---
 
+## Interruption Handling (Barge-in) on Twilio PSTN
+
+Allowing a caller to interrupt ("barge in") while the AI agent is speaking is
+essential for natural conversation. This turned out to be one of the hardest
+problems to solve when connecting Azure OpenAI Realtime / Voice Live API to a
+real PSTN call via Twilio Media Streams.
+
+### Why the "standard" approach doesn't work
+
+Most Azure Realtime API quickstarts show a simple pattern:
+
+1. Azure's server-side VAD fires `input_audio_buffer.speech_started`.
+2. You assume Azure automatically cancels the in-progress response.
+3. The user hears silence and the next response begins.
+
+This works when the client is a browser or native app with *direct* audio
+playback — audio deltas are played immediately as they arrive, so stopping the
+playback loop instantly silences the agent.
+
+**With Twilio PSTN, two additional challenges break this pattern:**
+
+#### Challenge 1 — Twilio buffers outbound audio
+
+Twilio Media Streams accepts `media` events from the backend and buffers them
+in an internal playout queue. By the time Azure fires `speech_started`, Twilio
+may already have **2–5 seconds of audio queued** that will keep playing
+regardless of whether the backend stops sending new audio. Simply stopping the
+flow of `response.audio.delta` packets does nothing to silence what's already
+in Twilio's buffer.
+
+**Solution:** On every `speech_started` event, immediately send a Twilio
+[`clear`](https://www.twilio.com/docs/voice/media-streams/websocket-messages#clear-message)
+message to flush the outbound audio buffer:
+
+```python
+msg = {"event": "clear", "streamSid": self.stream_sid}
+await self.twilio_ws.send_text(json.dumps(msg))
+```
+
+#### Challenge 2 — Azure finishes generating before Twilio finishes playing
+
+Azure generates audio much faster than real-time. A 10-second spoken response
+may be fully generated and delivered to the backend in 2–3 seconds. Azure then
+sends `response.done` and sets `_response_in_progress = False`. However,
+Twilio is still playing back the buffered audio for another 7+ seconds.
+
+If the interrupt handler only triggers when `_response_in_progress == True`,
+the Twilio flush never happens because from Azure's perspective the response
+is already complete.
+
+**Solution:** **Always** flush the Twilio buffer on `speech_started`,
+regardless of whether Azure is still generating:
+
+```python
+# speech_started handler
+if self._on_interrupt:
+    await self._on_interrupt()          # Always flush Twilio buffer
+
+if self._response_in_progress:
+    # Azure is still generating — also cancel + mute
+    self._mute_audio = True
+    await self.ws.send(json.dumps({"type": "response.cancel"}))
+```
+
+#### Challenge 3 — Stale audio deltas arrive after cancel
+
+Even after sending `response.cancel` to Azure, a few more
+`response.audio.delta` and `response.audio_transcript.done` messages arrive
+before Azure acknowledges the cancellation with `response.done`. If these are
+forwarded to Twilio they re-fill the buffer you just flushed.
+
+**Solution:** A `_mute_audio` flag is set to `True` on interrupt. While
+muted, all incoming `response.audio.delta` and transcript events are silently
+dropped. The flag is reset to `False` when `response.done` arrives, ensuring
+the next fresh response flows through normally.
+
+### The complete interrupt sequence
+
+```
+User speaks        Backend (speech_started handler)       Twilio          Azure
+─────────          ────────────────────────────────       ──────          ─────
+  │                                                        │               │
+  │  speech_started                                        │               │
+  │──────────────────▶│                                    │               │
+  │                   │  1. Send "clear" event             │               │
+  │                   │───────────────────────────────────▶│               │
+  │                   │  (flush queued audio immediately)  │               │
+  │                   │                                    │               │
+  │                   │  2. If response still in progress: │               │
+  │                   │     a. Set _mute_audio = True      │               │
+  │                   │     b. Send response.cancel        │               │
+  │                   │────────────────────────────────────────────────────▶│
+  │                   │                                    │               │
+  │                   │  3. Drop any late audio.delta      │               │
+  │                   │     (muted — don't forward)        │               │
+  │                   │                                    │               │
+  │                   │  4. response.done arrives           │               │
+  │                   │◀────────────────────────────────────────────────────│
+  │                   │     _mute_audio = False             │               │
+  │                   │                                    │               │
+  │  speech_stopped   │                                    │               │
+  │──────────────────▶│                                    │               │
+  │                   │  5. Azure processes user input     │               │
+  │                   │     and generates new response     │               │
+  │                   │◀────────────────────────────────────────────────────│
+  │                   │  6. Forward fresh audio.delta       │               │
+  │                   │───────────────────────────────────▶│  ▶ phone      │
+```
+
+### Key files involved
+
+| File | Role in interruption handling |
+|------|-------------------------------|
+| `azure_voicelive_client.py` | Listens for `speech_started`, sends `response.cancel`, manages `_mute_audio` flag, calls `on_interrupt_callback` to flush Twilio. |
+| `azure_gpt_realtime_client.py` | Same logic — both backends share identical interrupt handling. |
+| `media_bridge.py` | Provides `_flush_twilio_audio()` which sends the Twilio `clear` event. Wired as `on_interrupt_callback`. |
+
+### Does this work with both backends?
+
+Yes. The interrupt handling is **identical** in both `azure_voicelive_client.py`
+(Voice Live API) and `azure_gpt_realtime_client.py` (Azure OpenAI Realtime
+API). Both clients:
+
+- Always flush Twilio's buffer on `speech_started`
+- Send `response.cancel` to Azure if a response is still being generated
+- Mute stale audio/transcript deltas until `response.done`
+- Call the same `on_interrupt_callback` → `_flush_twilio_audio()`
+
+The only prerequisite is that the Twilio `Stream` WebSocket is active and the
+`streamSid` is known (captured from the `start` event).
+
+---
+
 ## Using Azure Voice Live API Instead
 
 The default implementation (`azure_gpt_realtime_client.py`) connects directly to the **Azure OpenAI Realtime API** at `/openai/realtime`. An alternative client (`azure_voicelive_client.py`) connects to the **Azure Voice Live API** at `/voice-live/realtime` — a separate service hosted on Azure AI Services (Cognitive Services) endpoints.

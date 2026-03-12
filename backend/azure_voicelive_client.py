@@ -9,6 +9,32 @@ Key differences from the Azure OpenAI Realtime approach:
   - Auth scope: https://ai.azure.com/.default (not cognitiveservices)
   - Voice config: Azure Speech voices with type "azure-standard"
   - Extra capabilities: noise suppression, echo cancellation
+
+Interruption Handling (Barge-in)
+--------------------------------
+With Twilio PSTN as the audio transport, the standard browser-based interrupt
+pattern (stop playing audio deltas) is insufficient because:
+
+  1. **Twilio buffers outbound audio** — several seconds of audio may already
+     be queued in Twilio's playout pipeline.  Simply stopping new deltas
+     doesn't silence what's already buffered.
+
+  2. **Azure finishes generating before Twilio finishes playing** — Azure
+     produces audio faster than real-time, so ``response.done`` (and
+     ``_response_in_progress = False``) can fire while Twilio still has
+     seconds of queued audio to play.
+
+  3. **Late deltas arrive after cancel** — even after sending
+     ``response.cancel``, a few residual ``response.audio.delta`` messages
+     leak through before Azure acknowledges with ``response.done``.
+
+The solution implemented here:
+  - On every ``speech_started`` event, **always** send a Twilio ``clear``
+    message (via ``on_interrupt_callback``) to flush the outbound audio
+    buffer, regardless of whether ``_response_in_progress`` is True.
+  - If Azure is still generating (``_response_in_progress`` is True),
+    additionally send ``response.cancel`` and set ``_mute_audio = True``
+    to drop any stale deltas until ``response.done`` resets the flag.
 """
 
 import asyncio
@@ -41,11 +67,19 @@ class AzureVoiceLiveSession:
         self._candidate_name = candidate_name
         self._receive_task: asyncio.Task | None = None
         self._closed = False
-        # Interruption handling
+        # ── Interruption / barge-in state ──────────────────────────────
+        # _speech_active: True while the user is speaking (between
+        #   speech_started and speech_stopped).
+        # _response_in_progress: True while Azure is actively streaming
+        #   response.audio.delta events.  Set True on first delta, reset
+        #   False on response.done.
+        # _mute_audio: When True, all incoming audio deltas and transcript
+        #   events are silently dropped.  This prevents stale data from a
+        #   cancelled response from reaching Twilio after a clear.  Reset
+        #   to False on response.done so the next fresh response flows.
         self._speech_active = False
         self._response_in_progress = False
-        self._pending_interrupt_task: asyncio.Task | None = None
-        self._interrupt_debounce_ms = 350
+        self._mute_audio = False
 
     async def connect(self):
         """Establish WebSocket connection to Azure Voice Live API."""
@@ -123,7 +157,7 @@ class AzureVoiceLiveSession:
                 "output_audio_format": "pcm16",
                 "input_audio_sampling_rate": 24000,
                 "input_audio_transcription": {
-                    "model": "whisper-1",
+                    "model": "gpt-4o-transcribe",
                 },
                 "turn_detection": turn_detection,
                 "input_audio_noise_reduction": {
@@ -177,17 +211,26 @@ class AzureVoiceLiveSession:
 
                 if msg_type == "response.audio.delta":
                     self._response_in_progress = True
+                    # Drop audio from a cancelled response — after an
+                    # interrupt we mute until response.done clears the flag.
+                    if self._mute_audio:
+                        continue
                     audio_b64 = data.get("delta", "")
                     if audio_b64 and self._on_audio:
                         audio_bytes = base64.b64decode(audio_b64)
                         await self._on_audio(audio_bytes)
 
                 elif msg_type == "response.audio_transcript.delta":
+                    if self._mute_audio:
+                        continue
                     text = data.get("delta", "")
                     if text and self._on_transcript:
                         await self._on_transcript("assistant", text, partial=True)
 
                 elif msg_type == "response.audio_transcript.done":
+                    # Skip transcript from a cancelled/muted response
+                    if self._mute_audio:
+                        continue
                     text = data.get("transcript", "")
                     if text and self._on_transcript:
                         await self._on_transcript("assistant", text, partial=False)
@@ -208,23 +251,53 @@ class AzureVoiceLiveSession:
                     logger.error(f"[{self.call_sid}] Voice Live error: {error}")
 
                 elif msg_type == "input_audio_buffer.speech_started":
-                    logger.debug(f"[{self.call_sid}] User started speaking")
+                    # ── BARGE-IN / INTERRUPTION HANDLING ─────────────────
+                    # This is the critical path for making interruptions
+                    # work over Twilio PSTN.  See the module docstring for
+                    # the full rationale.
+                    #
+                    # Step 1: ALWAYS flush Twilio's outbound audio buffer.
+                    #   Azure generates audio faster than real-time, so by
+                    #   the time the user speaks, response.done may have
+                    #   already fired (_response_in_progress == False) but
+                    #   Twilio still has seconds of queued audio playing.
+                    #   Sending Twilio's "clear" event discards that queue.
+                    #
+                    # Step 2: If Azure is still generating audio, send
+                    #   response.cancel and mute the pipeline so any late-
+                    #   arriving deltas don't re-fill the Twilio buffer
+                    #   we just flushed.
+                    logger.info(f"[{self.call_sid}] User started speaking (response_in_progress={self._response_in_progress})")
                     self._speech_active = True
-                    self._cancel_pending_interrupt()
-                    self._pending_interrupt_task = asyncio.create_task(
-                        self._debounced_interrupt()
-                    )
+
+                    # Step 1 — flush Twilio buffer unconditionally
+                    if self._on_interrupt:
+                        await self._on_interrupt()
+
+                    # Step 2 — cancel Azure response if still generating
+                    if self._response_in_progress:
+                        self._mute_audio = True
+                        self._response_in_progress = False
+                        try:
+                            await self.ws.send(json.dumps({"type": "response.cancel"}))
+                            logger.info(f"[{self.call_sid}] Sent response.cancel to Azure")
+                        except Exception:
+                            logger.exception(f"[{self.call_sid}] Failed to send response.cancel")
+
+                    logger.info(f"[{self.call_sid}] Interrupted — flushed Twilio buffer")
 
                 elif msg_type == "input_audio_buffer.speech_stopped":
-                    logger.debug(f"[{self.call_sid}] User stopped speaking")
+                    logger.info(f"[{self.call_sid}] User stopped speaking")
                     self._speech_active = False
-                    self._cancel_pending_interrupt()
 
                 elif msg_type == "input_audio_buffer.committed":
                     logger.debug(f"[{self.call_sid}] Audio buffer committed")
 
                 elif msg_type == "response.done":
                     self._response_in_progress = False
+                    # Unmute audio — the cancelled response is finished,
+                    # so the next response.audio.delta is from a fresh response.
+                    self._mute_audio = False
                     await self._handle_response_done(data)
 
         except websockets.exceptions.ConnectionClosed as e:
@@ -284,7 +357,7 @@ class AzureVoiceLiveSession:
         """Wait briefly before triggering an interrupt to filter out coughs/noise."""
         try:
             await asyncio.sleep(self._interrupt_debounce_ms / 1000)
-            if self._speech_active and self._response_in_progress:
+            if self._response_in_progress:
                 await self._interrupt_response()
         except asyncio.CancelledError:
             pass

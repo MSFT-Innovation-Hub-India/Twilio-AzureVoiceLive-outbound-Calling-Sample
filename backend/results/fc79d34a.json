@@ -1,0 +1,119 @@
+{
+  "candidate_name": "Srikantan",
+  "call_outcome": "early_termination",
+  "role_confirmed": true,
+  "eligibility": {
+    "transport": "two_wheeler",
+    "smartphone": "iphone",
+    "education_12th_pass": "yes",
+    "target_comfort": "yes",
+    "travel_comfort": "wants_more_info"
+  },
+  "assessment": {
+    "sales_pitch_score": "not_assessed",
+    "daily_target_ideas": "not_assessed",
+    "willingness_to_stretch": "not_assessed",
+    "stickiness_to_phonepe": "not_assessed",
+    "financial_dependence": "not_assessed"
+  },
+  "overall_recommendation": "borderline",
+  "recommendation_justification": "Candidate ended the call early but showed initial interest and met some eligibility criteria. Sales pitch and other assessments not completed.",
+  "id": "a3964cd9-bad0-4fb2-9ef8-acdda0605b52",
+  "call_id": "fc79d34a",
+  "scenario_id": "phonepe_field_sales_screening",
+  "timestamp": "2026-03-12T04:59:59.877207+00:00",
+  "transcripts": [
+    {
+      "role": "assistant",
+      "text": "Hello Srikantan, thank you for applying to PhonePe."
+    },
+    {
+      "role": "user",
+      "text": "एहलो देव"
+    },
+    {
+      "role": "assistant",
+      "text": "My name is Aria, and I am the Recruitment Assistant for the talent acquisition team here at PhonePe."
+    },
+    {
+      "role": "user",
+      "text": "Okay"
+    },
+    {
+      "role": "assistant",
+      "text": "This short call will cover some essential questions for the field sales position to see if your experience is a good match before we proceed to an in-person interview."
+    },
+    {
+      "role": "user",
+      "text": "No, no, hold on. What did you say your name was?"
+    },
+    {
+      "role": "assistant",
+      "text": "My name is Aria, and I’m here to assist with your PhonePe field sales application. Now, do you have about 5 to 7 minutes available right now to proceed with these questions?"
+    },
+    {
+      "role": "user",
+      "text": "Yeah, yeah, of course."
+    },
+    {
+      "role": "assistant",
+      "text": "Great. We will begin with the first question now. Please note that all answers are recorded and transcribed to ensure a fair evaluation. \n\nCan you confirm you are aware of and interested in the field sales role at PhonePe?"
+    },
+    {
+      "role": "user",
+      "text": "Yeah, I got it"
+    },
+    {
+      "role": "assistant",
+      "text": "Excellent. Please note that all answers are recorded and transcribed to ensure a fair evaluation. We will begin with the first question now. \n\nThe role requires market movement. Do you have access to a two-wheeler or a four-wheeler for daily work?"
+    },
+    {
+      "role": "user",
+      "text": "Yeah, I have both."
+    },
+    {
+      "role": "assistant",
+      "text": "Thank you. I'll register that as having access to both. \n\nNext question: do you own an Android smartphone or any other smartphone?"
+    },
+    {
+      "role": "user",
+      "text": "I own an iPhone, by the way."
+    },
+    {
+      "role": "assistant",
+      "text": "Got it, you own an iPhone. \n\nFor compliance purposes, we must confirm your education. Do you have a valid 12th pass certificate?"
+    },
+    {
+      "role": "user",
+      "text": "Yes, I do and can I speak to him in Hindi the next couple of other questions?"
+    },
+    {
+      "role": "assistant",
+      "text": "ज़रूर, मैं अब हिंदी में आगे बढ़ता हूँ। \n\nअगला सवाल: यह भूमिका मुख्य रूप से लक्ष्य-आधारित सेल्स है, जिसमें आपको महीने के टार्गेट पूरे करने होंगे। क्या आप टार्गेट-आधारित सेल्स जॉब के लिए सहज हैं?"
+    },
+    {
+      "role": "user",
+      "text": "Ha, belki de."
+    },
+    {
+      "role": "assistant",
+      "text": "धन्यवाद, मैं इसे नोट कर लेता हूँ। \n\nअगला सवाल: इस काम में रोज़ शहर के भीतर यात्रा करके व्यापारियों से मिलना होगा। क्या आप इस रोज़ाना इंट्रा-सिटी ट्रैवल के लिए तैयार हैं?"
+    },
+    {
+      "role": "user",
+      "text": "Can you stop this interview now?"
+    },
+    {
+      "role": "assistant",
+      "text": "ज़रूर, मैं समझाता हूँ। इसमें आपको अपने शहर के अलग-अलग इलाकों में व्यापारियों से मिलना होगा, कभी-कभी दिन में कई जगह जाना पड़ सकता है। यह यात्रा आमतौर पर शहर के अंदर ही रहेगी, और साधारणत: दोपहिया या चारपहिया से की जाएगी। \n\nतो, क्या आप इस तरह के रोज़ाना इंट्रा-सिटी ट्रैवल के लिए सहज हैं?"
+    },
+    {
+      "role": "user",
+      "text": "Then we can end the call now."
+    },
+    {
+      "role": "assistant",
+      "text": "कोई बात नहीं, मैं अभी तक का डेटा सेव कर देता हूँ। धन्यवाद, श्रीकान्तन।"
+    }
+  ]
+}
